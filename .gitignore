@@ -1,0 +1,16 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# 测试产物（由脚本生成，不入库）
+tests/
+__pycache__/
+*.pyc
+
+# 分享包 zip（通过 GitHub Releases 分发）
+*.zip
+
+# 系统/编辑器
+.DS_Store
+.vscode/
+.idea/

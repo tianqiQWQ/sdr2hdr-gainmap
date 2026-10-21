@@ -1,0 +1,49 @@
+# 兼容性说明
+
+## 一、查看 HDR 效果（导出文件）
+
+| 平台 | 推荐方式 | 说明 |
+|---|---|---|
+| Windows | 系统设置开启 HDR + Chrome / Edge | 未开 HDR 或 SDR 屏上会显示为普通 JPG |
+| macOS | Safari（XDR / 支持 HDR 的屏幕） | Chrome 对 HDR 图片的原生渲染支持随版本/系统变化，Safari 更可靠 |
+| iPhone / iPad | iOS 18+ 的「照片」App 或 Safari | 旧版本系统可能只显示 SDR 主图 |
+| Android | Android 14+ 系统相册 / Chrome | 需支持 Ultra HDR 的相册 |
+| Firefox | — | 目前不支持 gain map HDR，会显示 SDR 主图 |
+
+注意：
+
+- SDR 屏 / 旧软件 / 不支持 gain map 的浏览器会显示 **SDR 主图**（普通模式=原图；曝光模式=提亮后的底图），文件不会损坏
+- 微信、QQ、部分网页上传/压缩会剥离增益图元数据 → HDR 静默退化，但图仍正常
+- 同一条 HDR 图在不同 HDR 屏上的提亮幅度不同（按 `HDRCapacityMin/Max` 自适应），这是设计行为
+
+## 二、运行这个工具（网页本身）
+
+- 桌面：Chrome / Edge / Safari 双击 `index.html` 即可（本地处理，无需服务器）
+- 移动端：需要把页面部署到 HTTP(S)（例如 GitHub Pages）后用浏览器访问；移动端 Safari/Chrome 可以打开
+- 不需要联网、不上传文件（除首次加载页面本身）
+- 本机 HDR 渲染状态：页面显示 `dynamic-range: high/standard`
+
+### 移动端已知限制（尚未做专门适配）
+
+1. **iOS 上所有浏览器都是 WebKit**：Chrome iOS 不是 Chromium 内核，行为接近 Safari
+2. **文件选择**：iOS 从「照片」选图通常会得到 JPEG（HEIC 会被转换）；PNG 支持取决于系统转换结果
+3. **本地 HTML 打开**：iOS 的「文件」App 点开 HTML 一般只做预览、不执行脚本 → 移动端应使用在线地址（GitHub Pages）
+4. **内存/性能**：手机浏览器对 4000 万像素级大图较吃紧；建议先用 12MP 以下或先缩小再处理
+5. **HDR 预览**：移动端浏览器对网页内 HDR 图片的原生渲染支持不一，最可靠的验证方式是导出后用系统相册查看
+
+## 三、常见问题
+
+**Q：导出后看起来和原图一样？**
+A：当前设备/浏览器/软件不支持 HDR 显示，或系统 HDR 未开启。文件本身是正常 JPG，在不支持的环境显示 SDR 主图。
+
+**Q：在网页里调参看不到 HDR 效果？**
+A：普通预览画布是 SDR 的，无法输出 HDR 亮度。请使用「大图 HDR 调试」或直接看导出文件。
+
+**Q：为什么曝光模式下原图字节不再保留？**
+A：整体曝光需要重编码 SDR 底图（和 PS 32-bit 拉曝光同理），会尽量复制原图 EXIF/ICC；普通模式（EV=0）仍然逐字节保留。
+
+**Q：为什么 iOS 上分享到微信后再看就变普通图了？**
+A：二次压缩会剥离增益图。请用 AirDrop / 邮件 / 网盘"原图"传输。
+
+**Q：Firefox？**
+A：目前不支持 gain map 图片的 HDR 渲染；工具本身可以打开但不能验证 HDR 效果。

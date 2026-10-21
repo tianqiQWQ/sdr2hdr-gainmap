@@ -1,0 +1,1696 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDR → HDR 转换器（本地网页版）v0.7</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
+    --muted: #9aa3b2; --accent: #5aa9ff; --warn: #ffb454; --ok: #58d68d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+  }
+  header { padding: 22px 24px 14px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 18px; margin: 0 0 6px; font-weight: 600; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; max-width: 920px; }
+  .ver-note { color: #7f8a9b; font-size: 12px; margin: -2px 0 8px; }
+  main { padding: 20px 24px 60px; max-width: 1180px; margin: 0 auto; }
+  .drop {
+    border: 2px dashed #3a4150; border-radius: 12px; padding: 38px 20px;
+    text-align: center; cursor: pointer; transition: .15s; background: var(--panel);
+  }
+  .drop.hover, .drop:focus { border-color: var(--accent); background: #1a2130; outline: none; }
+  .drop strong { display: block; font-size: 15px; margin-bottom: 6px; }
+  .drop span { color: var(--muted); font-size: 13px; }
+  .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+  .previews.single { grid-template-columns: 1fr; }
+  .previews.single #figHdr { display: none; }
+  @media (max-width: 820px) { .previews { grid-template-columns: 1fr; } }
+  figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  figure canvas { display: block; width: 100%; height: auto; background: #000; }
+  figcaption { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
+  figure img { display: block; width: 100%; height: auto; background: #000; }
+  .hdr-link { padding: 4px 12px 10px; }
+  .hdr-link a { color: var(--accent); font-size: 12px; text-decoration: none; }
+  .hdr-link a:hover { text-decoration: underline; }
+  .hist-fig { margin-top: 14px; }
+  .hist-fig canvas { height: 156px; }
+  .controls { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .ctl-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .ctl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; margin-top: 12px; }
+  @media (max-width: 820px) { .ctl-grid { grid-template-columns: 1fr; } }
+  .ctl { display: flex; align-items: center; gap: 10px; }
+  .ctl label { min-width: 64px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .ctl input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .ctl .val { min-width: 100px; font-size: 12px; }
+  .val { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+  button {
+    background: var(--accent); color: #06121f; border: 0; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  button.secondary { background: #2a3140; color: var(--fg); }
+  details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; user-select: none; }
+  .meta { margin-top: 14px; color: var(--muted); font-size: 12.5px; }
+  .meta b { color: var(--fg); font-weight: 600; }
+  .note { margin-top: 10px; padding: 10px 12px; border-left: 3px solid var(--accent); background: #131a26; color: #c4d2e6; font-size: 12.5px; border-radius: 4px; }
+  .warn { border-left-color: var(--warn); background: #1f1a12; color: #e8cfae; }
+  .ok { color: var(--ok); }
+  .chk { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .chk input { accent-color: var(--accent); }
+  .sel { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .sel select { background: #232a36; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+  .hidden { display: none !important; }
+  .fig-hint { padding: 0 12px 10px; font-size: 11.5px; color: #6f7a8a; }
+  button.sm { padding: 6px 12px; font-size: 12.5px; border-radius: 6px; }
+  a.btn-like { background: #2a3140; color: var(--fg); border-radius: 6px; padding: 6px 12px; font-size: 12.5px; text-decoration: none; }
+  .big-view { position: fixed; inset: 0; z-index: 1000; background: #05070a; display: flex; flex-direction: column; }
+  .big-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+             padding: 10px 16px; border-bottom: 1px solid var(--line); background: #0b0e13; }
+  .big-title { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .big-status { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .big-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .big-stage { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center;
+               background: #000; padding: 8px; }
+  .big-stage img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+  .big-stage.actual { align-items: flex-start; justify-content: flex-start; }
+  .big-stage.actual img { max-width: none; max-height: none; }
+  .big-dock { max-height: 42vh; overflow: auto; border-top: 1px solid var(--line); background: var(--panel); }
+  .big-dock .controls { margin: 0; border: 0; border-radius: 0; }
+  .big-dock .meta, .big-dock .note { display: none; }
+  .big-dock .controls { padding: 10px 16px; }
+  .busy { opacity: .6; pointer-events: none; }
+  ol.steps { margin: 10px 0 0; padding-left: 20px; color: var(--muted); font-size: 12.5px; }
+  ol.steps li { margin: 3px 0; }
+  code { background: #232a36; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.7 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.7 更新：新增 PNG 输入（自动转 JPEG 底图；透明区域铺白、16-bit 降为 8-bit）</div>
+  <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
+     <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
+</header>
+<main>
+  <div class="drop" id="drop" tabindex="0" role="button">
+    <strong>把 JPG / PNG 拖到这里，或点击选择文件</strong>
+    <span>支持大图（4500 万像素级）；PNG 会自动转成 JPEG 底图（透明铺白）；增益图默认全分辨率，也可切半分辨率</span>
+  </div>
+  <input type="file" id="file" accept="image/jpeg,image/png" class="hidden">
+
+  <section id="editor" class="hidden">
+    <div class="previews" id="previews">
+      <figure id="figSdr">
+        <canvas id="cvSdr"></canvas>
+        <figcaption id="sdrCaption">SDR 原图 —— 普通屏、旧软件、不支持 gain map 的浏览器看到的样子（与导出文件完全一致）</figcaption>
+      </figure>
+      <figure id="figHdr">
+        <canvas id="cvHdr"></canvas>
+        <img id="hdrImg" class="hidden" alt="真 HDR 预览">
+        <figcaption id="captionHdr">HDR 增益示意</figcaption>
+        <div class="hdr-link hidden" id="hdrLinkWrap">
+          <a id="hdrLink" href="#" target="_blank" rel="noopener">在新标签打开真 HDR 预览（原生渲染）</a>
+        </div>
+        <div class="fig-hint">点击画面 → 大图 HDR 调试（按当前参数与最终导出分辨率实时生成）</div>
+      </figure>
+    </div>
+
+    <figure class="hist-fig" id="histFig">
+      <canvas id="hist"></canvas>
+      <figcaption id="histCaption">SDR / HDR 直方图 —— 白点左侧为 SDR 影调，右侧为 HDR 提亮区（宽度按曝光档数比例）</figcaption>
+    </figure>
+
+    <div class="controls">
+      <div class="ctl-row">
+        <label class="chk"><input type="checkbox" id="showAssist" checked> 显示 HDR 辅助（预览 + 直方图）</label>
+        <label class="sel">预览模式
+          <select id="previewMode">
+            <option value="gain" selected>增益示意（不压暗）</option>
+            <option value="headroom">亮度余量（压暗）</option>
+            <option value="heatmap">增益热力图</option>
+            <option value="truehdr">真 HDR 预览（原生渲染）</option>
+          </select>
+        </label>
+        <button id="bigViewBtn" class="secondary sm" disabled>⤢ 大图 HDR 调试</button>
+      </div>
+
+      <div class="ctl-grid">
+        <div class="ctl"><label for="strength">HDR 强度</label><input type="range" id="strength" min="0" max="100" step="1" value="50"><span class="val" id="strengthVal"></span></div>
+        <div class="ctl"><label for="knee">提亮起点</label><input type="range" id="knee" min="100" max="220" step="1" value="170"><span class="val" id="kneeVal"></span></div>
+        <div class="ctl"><label for="detail">细节增强</label><input type="range" id="detail" min="0" max="100" step="1" value="40"><span class="val" id="detailVal"></span></div>
+        <div class="ctl"><label for="color">彩色高光</label><input type="range" id="color" min="0" max="100" step="1" value="85"><span class="val" id="colorVal"></span></div>
+        <div class="ctl"><label for="exposureEv">整体曝光</label><input type="range" id="exposureEv" min="0" max="3" step="0.1" value="0"><span class="val" id="exposureVal"></span></div>
+      </div>
+
+      <details id="advanced">
+        <summary>高级参数：过渡曲线 / 细节尺度 / 通透感 / 人像保护 / 增益图分辨率</summary>
+        <div class="ctl-grid">
+          <div class="ctl"><label for="curvePow">过渡曲线</label><input type="range" id="curvePow" min="1" max="3" step="0.05" value="1.6"><span class="val" id="curveVal"></span></div>
+          <div class="ctl"><label for="detailRadius">细节尺度</label><input type="range" id="detailRadius" min="4" max="40" step="1" value="16"><span class="val" id="radiusVal"></span></div>
+          <div class="ctl"><label for="clarity">通透感</label><input type="range" id="clarity" min="0" max="100" step="1" value="15"><span class="val" id="clarityVal"></span></div>
+          <div class="ctl"><label for="highlightCompress">高光柔化</label><input type="range" id="highlightCompress" min="0" max="100" step="1" value="80"><span class="val" id="compressVal"></span></div>
+        </div>
+        <div class="ctl-row" style="margin-top:12px">
+          <label class="chk"><input type="checkbox" id="portrait" checked> 人像保护</label>
+          <input type="range" id="portraitStrength" min="0" max="100" step="1" value="50" style="flex:0 1 220px">
+          <span class="val" id="portraitVal" style="min-width:70px"></span>
+          <label class="sel">增益图分辨率
+            <select id="gainScale">
+              <option value="1" selected>全分辨率（细节最好）</option>
+              <option value="0.5">半分辨率（文件更小）</option>
+            </select>
+          </label>
+          <button id="resetParams" class="secondary">恢复默认参数</button>
+        </div>
+      </details>
+
+      <div class="ctl-row" style="margin-top:14px">
+        <button id="exportBtn" disabled>导出 HDR JPG</button>
+        <button id="resetBtn" class="secondary" disabled>重新选择</button>
+        <span class="val" id="status"></span>
+      </div>
+      <div class="meta" id="meta"></div>
+      <div class="note" id="note">
+        提示：导出的文件在不支持 HDR 的显示环境里和原图看起来一样，这是正常现象；只有 HDR 屏 + 支持的浏览器/相册才会显示更亮的高光。
+      </div>
+    </div>
+  </section>
+
+  <section id="result" class="hidden">
+    <div class="note ok" id="resultText"></div>
+    <ol class="steps">
+      <li>先把文件用 AirDrop / 文件 App / 数据线传到手机或 HDR 电脑上；</li>
+      <li>iPhone/iPad：存到「照片」或直接在 Safari 打开（iOS 18+ 支持 gain map HDR JPG）；</li>
+      <li>Android：用 Chrome 或系统相册打开（Android 14+）；</li>
+      <li>Windows：系统显示设置里打开 HDR，用 Chrome/Edge 打开；Mac：Safari 打开（XDR 屏）；</li>
+      <li>若某台设备看不到变化，把该设备的 系统版本 + 浏览器版本 记下来反馈。</li>
+    </ol>
+  </section>
+</main>
+
+<!-- 大图 HDR 调试视图 -->
+<div id="bigView" class="big-view hidden">
+  <div class="big-top">
+    <div class="big-title">
+      大图 HDR 调试
+      <span class="big-status" id="bigStatus">准备中…</span>
+    </div>
+    <div class="big-actions">
+      <button id="bigFit" class="secondary sm">适应窗口</button>
+      <button id="bigActual" class="secondary sm">1:1</button>
+      <a id="bigDownload" class="btn-like" href="#" download>下载当前 HDR</a>
+      <button id="bigClose" class="secondary sm">关闭（Esc）</button>
+    </div>
+  </div>
+  <div class="big-stage" id="bigStage"><img id="bigImg" alt="全分辨率 HDR 预览"></div>
+  <div class="big-dock" id="bigDock"></div>
+</div>
+
+<canvas id="workGain" class="hidden"></canvas>
+
+<script>
+"use strict";
+
+/* ============================================================
+ * 字节工具
+ * ============================================================ */
+const textEncoder = new TextEncoder();
+const ascii = (s) => textEncoder.encode(s);
+function u16be(n) { return new Uint8Array([(n >> 8) & 0xff, n & 0xff]); }
+function u32be(n) { return new Uint8Array([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]); }
+function concatBytes(...arrs) {
+  let len = 0;
+  for (const a of arrs) len += a.length;
+  const out = new Uint8Array(len);
+  let off = 0;
+  for (const a of arrs) { out.set(a, off); off += a.length; }
+  return out;
+}
+function fmtNum(x) {
+  if (!isFinite(x)) return "0";
+  if (Math.abs(x) < 1e-9) return "0";
+  let s = x.toFixed(6);
+  s = s.replace(/0+$/, "").replace(/\.$/, "");
+  return s;
+}
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function smoothstep(a, b, x) {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+/* ============================================================
+ * JPEG 结构工具
+ * ============================================================ */
+const XMP_ID = ascii("http://ns.adobe.com/xap/1.0/\u0000");
+
+function findJpegInsertPos(bytes) {
+  if (!(bytes.length > 4 && bytes[0] === 0xFF && bytes[1] === 0xD8)) {
+    throw new Error("不是有效的 JPEG 文件（缺少 SOI）");
+  }
+  let pos = 2;
+  while (pos + 4 <= bytes.length) {
+    if (bytes[pos] !== 0xFF) break;
+    const m = bytes[pos + 1];
+    if (m >= 0xE0 && m <= 0xEF) {
+      const len = (bytes[pos + 2] << 8) | bytes[pos + 3];
+      if (len < 2 || pos + 2 + len > bytes.length) break;
+      pos += 2 + len;
+    } else break;
+  }
+  return pos;
+}
+function hasJpegEoi(bytes) {
+  return bytes.length >= 2 && bytes[bytes.length - 2] === 0xFF && bytes[bytes.length - 1] === 0xD9;
+}
+function startsWith(bytes, prefix) {
+  if (bytes.length < prefix.length) return false;
+  for (let i = 0; i < prefix.length; i++) if (bytes[i] !== prefix[i]) return false;
+  return true;
+}
+
+function inspectOriginalJpeg(bytes) {
+  const info = { hasXmp: false, orientation: 1, hasExif: false, hasIcc: false };
+  let pos = 2;
+  while (pos + 4 <= bytes.length) {
+    if (bytes[pos] !== 0xFF) break;
+    const m = bytes[pos + 1];
+    if (m < 0xE0 || m > 0xEF) break;
+    const len = (bytes[pos + 2] << 8) | bytes[pos + 3];
+    if (len < 2 || pos + 2 + len > bytes.length) break;
+    const payloadStart = pos + 4;
+    const payloadEnd = pos + 2 + len;
+    if (m === 0xE1) {
+      const p = bytes.subarray(payloadStart, Math.min(payloadStart + 32, payloadEnd));
+      if (startsWith(p, XMP_ID)) info.hasXmp = true;
+      else if (startsWith(p, ascii("Exif\u0000\u0000"))) {
+        info.hasExif = true;
+        try { info.orientation = readExifOrientation(bytes.subarray(payloadStart + 6, payloadEnd)); } catch (e) { /* ignore */ }
+      }
+    }
+    if (m === 0xE2) {
+      const p = bytes.subarray(payloadStart, Math.min(payloadStart + 16, payloadEnd));
+      if (startsWith(p, ascii("ICC_PROFILE\u0000"))) info.hasIcc = true;
+    }
+    pos += 2 + len;
+  }
+  return info;
+}
+
+function stripStaleHdrMetadata(bytes) {
+  // 非 JPEG（例如 PNG）：不做任何处理，原样返回
+  if (!(bytes.length > 2 && bytes[0] === 0xFF && bytes[1] === 0xD8)) {
+    return { bytes, removed: { mpf: 0, xmp: 0 } };
+  }
+  const removed = { mpf: 0, xmp: 0 };
+  const kept = [];
+  let pos = 2;
+  while (pos + 4 <= bytes.length) {
+    if (bytes[pos] !== 0xFF) break;
+    const m = bytes[pos + 1];
+    if (m < 0xE0 || m > 0xEF) break;
+    const len = (bytes[pos + 2] << 8) | bytes[pos + 3];
+    if (len < 2 || pos + 2 + len > bytes.length) break;
+    const pStart = pos + 4, pEnd = pos + 2 + len;
+    const payload = bytes.subarray(pStart, pEnd);
+    let drop = false;
+    if (m === 0xE2 && startsWith(payload, ascii("MPF\u0000"))) {
+      drop = true; removed.mpf++;
+    } else if (m === 0xE1 && startsWith(payload, XMP_ID)) {
+      let txt;
+      try { txt = new TextDecoder().decode(payload); } catch (e) { txt = ""; }
+      if (txt.indexOf("hdrgm:") >= 0) { drop = true; removed.xmp++; }
+    }
+    if (!drop) kept.push(bytes.subarray(pos, pEnd));
+    pos += 2 + len;
+  }
+  if (!removed.mpf && !removed.xmp) return { bytes, removed };
+  return { bytes: concatBytes(bytes.subarray(0, 2), ...kept, bytes.subarray(pos)), removed };
+}
+
+function readExifOrientation(tiff) {
+  if (tiff.length < 8) return 1;
+  const le = tiff[0] === 0x49 && tiff[1] === 0x49;
+  const rd16 = (o) => le ? (tiff[o] | (tiff[o + 1] << 8)) : ((tiff[o] << 8) | tiff[o + 1]);
+  const rd32 = (o) => le
+    ? (tiff[o] | (tiff[o + 1] << 8) | (tiff[o + 2] << 16) | (tiff[o + 3] << 24)) >>> 0
+    : ((tiff[o] << 24) | (tiff[o + 1] << 16) | (tiff[o + 2] << 8) | tiff[o + 3]) >>> 0;
+  if (rd16(2) !== 42) return 1;
+  const ifd0 = rd32(4);
+  if (ifd0 + 2 > tiff.length) return 1;
+  const count = rd16(ifd0);
+  for (let i = 0; i < count; i++) {
+    const off = ifd0 + 2 + i * 12;
+    if (off + 12 > tiff.length) break;
+    if (rd16(off) === 0x0112) {
+      const type = rd16(off + 2);
+      const value = type === 3 ? rd16(off + 8) : rd32(off + 8);
+      return value || 1;
+    }
+  }
+  return 1;
+}
+
+/* ============================================================
+ * Ultra HDR 容器构建（主图原样保留 + XMP/MPF，副图=增益图+XMP）
+ * ============================================================ */
+function appSegment(marker, payload) {
+  const len = payload.length + 2;
+  if (len > 65535) throw new Error("APP 段过大: " + len);
+  return concatBytes(new Uint8Array([0xFF, marker]), u16be(len), payload);
+}
+
+function buildPrimaryXmp(secondaryLen) {
+  const xml =
+`<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.2">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+   xmlns:Container="http://ns.google.com/photos/1.0/container/"
+   xmlns:Item="http://ns.google.com/photos/1.0/container/item/"
+   xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/"
+   hdrgm:Version="1.0">
+   <Container:Directory>
+    <rdf:Seq>
+     <rdf:li rdf:parseType="Resource">
+      <Container:Item Item:Semantic="Primary" Item:Mime="image/jpeg"/>
+     </rdf:li>
+     <rdf:li rdf:parseType="Resource">
+      <Container:Item Item:Semantic="GainMap" Item:Mime="image/jpeg" Item:Length="${secondaryLen}"/>
+     </rdf:li>
+    </rdf:Seq>
+   </Container:Directory>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>`;
+  return appSegment(0xE1, concatBytes(XMP_ID, textEncoder.encode(xml)));
+}
+
+function buildSecondaryXmp(meta) {
+  const seq = (name, val) => `   <hdrgm:${name}>
+    <rdf:Seq>
+     <rdf:li>${fmtNum(val)}</rdf:li>
+     <rdf:li>${fmtNum(val)}</rdf:li>
+     <rdf:li>${fmtNum(val)}</rdf:li>
+    </rdf:Seq>
+   </hdrgm:${name}>`;
+  const xml =
+`<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.2">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+   xmlns:hdrgm="http://ns.adobe.com/hdr-gain-map/1.0/"
+   hdrgm:Version="1.0"
+   hdrgm:BaseRenditionIsHDR="False"
+   hdrgm:OffsetSDR="${fmtNum(meta.offsetSdr)}"
+   hdrgm:OffsetHDR="${fmtNum(meta.offsetHdr)}"
+   hdrgm:HDRCapacityMin="${fmtNum(meta.capacityMin)}"
+   hdrgm:HDRCapacityMax="${fmtNum(meta.capacityMax)}">
+${seq("GainMapMin", meta.minLogBoost)}
+${seq("GainMapMax", meta.maxLogBoost)}
+${seq("Gamma", meta.gamma)}
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>`;
+  return appSegment(0xE1, concatBytes(XMP_ID, textEncoder.encode(xml)));
+}
+
+function stripLeadingAppSegments(bytes) {
+  let pos = 2;
+  while (pos + 4 <= bytes.length) {
+    if (bytes[pos] !== 0xFF) break;
+    const m = bytes[pos + 1];
+    if (m < 0xE0 || m > 0xEF) break;
+    const len = (bytes[pos + 2] << 8) | bytes[pos + 3];
+    if (len < 2 || pos + 2 + len > bytes.length) break;
+    pos += 2 + len;
+  }
+  return concatBytes(bytes.subarray(0, 2), bytes.subarray(pos));
+}
+
+function buildMpfSegment(primarySize, secondarySize, secondaryOffset) {
+  const tiff = concatBytes(
+    ascii("MM"), u16be(0x002A), u32be(8),
+    u16be(3),
+    u16be(0xB000), u16be(7), u32be(4), ascii("0100"),
+    u16be(0xB001), u16be(4), u32be(1), u32be(2),
+    u16be(0xB002), u16be(7), u32be(32), u32be(50),
+    u32be(0),
+    u32be(0x00030000), u32be(primarySize), u32be(0), u16be(0), u16be(0),
+    u32be(0x00000000), u32be(secondarySize), u32be(secondaryOffset), u16be(0), u16be(0)
+  );
+  return appSegment(0xE2, concatBytes(ascii("MPF\u0000"), tiff));
+}
+
+function insertSegment(bytes, segment) {
+  const pos = findJpegInsertPos(bytes);
+  return concatBytes(bytes.subarray(0, pos), segment, bytes.subarray(pos));
+}
+
+function assembleUltraHdr(originalJpeg, gainMapJpeg, meta) {
+  if (!hasJpegEoi(originalJpeg)) throw new Error("原始 JPG 不完整（缺少 EOI），无法封包");
+  if (!hasJpegEoi(gainMapJpeg)) throw new Error("增益图 JPEG 编码失败（缺少 EOI）");
+  const secondaryXmp = buildSecondaryXmp(meta);
+  const secondary = insertSegment(stripLeadingAppSegments(gainMapJpeg), secondaryXmp);
+  const primaryXmp = buildPrimaryXmp(secondary.length);
+  const mpfProbe = buildMpfSegment(0, 0, 0);
+  const insertPos = findJpegInsertPos(originalJpeg);
+  const primarySize = originalJpeg.length + primaryXmp.length + mpfProbe.length;
+  const mpfStart = insertPos + primaryXmp.length;
+  const secondaryOffset = primarySize - (mpfStart + 8);
+  const mpf = buildMpfSegment(primarySize, secondary.length, secondaryOffset);
+  const primary = concatBytes(
+    originalJpeg.subarray(0, insertPos),
+    primaryXmp,
+    mpf,
+    originalJpeg.subarray(insertPos)
+  );
+  return concatBytes(primary, secondary);
+}
+
+/* ============================================================
+ * 参数与增益模型
+ * ============================================================ */
+const DEFAULT_PARAMS = {
+  strength: 50,          // 0-100 -> 最大 0-3 档
+  knee: 170,             // 100-220：开始提亮的亮度
+  detail: 40,            // 0-100：小细节额外提亮
+  color: 85,             // 0-100：彩色高光参与度
+  curvePow: 1.6,         // 1.0-3.0：过渡曲线（大=陡）
+  detailRadius: 16,      // 4-40 px：细节判断半径
+  clarity: 15,           // 0-100：局部对比/通透感
+  portrait: true,        // 人像保护
+  portraitStrength: 50,  // 0-100
+  gainScale: 1,          // 1 | 0.5
+  exposureEv: 0,         // 0-3 EV：整体曝光提升（会重编码 SDR 底图）
+  highlightCompress: 80, // 0-100：曝光提升时的高光柔化（0=直接裁剪，100=强压缩）
+};
+
+const OFFSET = 0.015625;   // 1/64，与 Adobe/Apple 参考一致
+const JPEG_QUALITY = 0.90; // 增益图质量
+// 整体曝光提升的软肩压缩参数（拟合自 PS 32-bit 拉曝光参考图）
+const EXPOSURE_T = 0.15;
+const EXPOSURE_K = 0.25;
+// sRGB(0-255) -> 线性 的查表（性能）
+const SRGB_LIN_LUT = (() => {
+  const l = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const v = i / 255;
+    l[i] = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  }
+  return l;
+})();
+
+function makeMeta(strengthPct, maxLogOverride) {
+  const maxLogBoost = (maxLogOverride != null) ? maxLogOverride : 3.0 * (strengthPct / 100);
+  return {
+    minLogBoost: 0,
+    maxLogBoost,
+    gamma: 1.0,
+    offsetSdr: OFFSET,
+    offsetHdr: OFFSET,
+    capacityMin: 0,
+    capacityMax: maxLogBoost,
+    version: "1.0",
+  };
+}
+
+/** 建立 256 项 LUT：亮度指标(0-255) -> 归一化增益 g(0..1) */
+function buildGainLut(knee, curvePow) {
+  const lut = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const t = clamp((i - knee) / (255 - knee), 0, 1);
+    lut[i] = Math.pow(t, curvePow);
+  }
+  return lut;
+}
+
+/**
+ * 曝光提升的色调映射：z 为线性光亮度（已乘 2^EV），输出 [0,1]
+ *  - 低亮度线性通过（所以暗部/背景整体提亮）
+ *  - 高光用软肩压缩（保留太阳/灯等细节，类似 PS 32-bit 拉曝光后的自然过渡）
+ *  - compress: 0=直接裁剪（硬）, 1=完全软肩（拟合 PS 参考）
+ */
+function toneMapExposure(z, compress) {
+  if (!(z > 0)) return 0;
+  const t = EXPOSURE_T;
+  let out;
+  if (z <= t) out = z;
+  else out = t + (1 - t) * (1 - Math.exp(-(z - t) / (1 - t) * EXPOSURE_K));
+  if (compress < 1) out = (1 - compress) * Math.min(z, 1) + compress * out;
+  return out;
+}
+
+/** 根据参数与目标分辨率，生成运行时 profile（半径按目标分辨率缩放） */
+function makeProfile(p, scale) {
+  const clarityRadiusFull = Math.max(24, p.detailRadius * 4);
+  const exposureMode = (p.exposureEv || 0) > 0.001;
+  const F = exposureMode ? Math.pow(2, p.exposureEv) : 1;
+  const comp = (p.highlightCompress == null ? 80 : p.highlightCompress) / 100;
+  const M = 3.0 * (p.strength / 100);
+  let K = M;
+  if (exposureMode) {
+    const zdMax = toneMapExposure(F, comp);
+    K = M + Math.log2(F / Math.max(zdMax, 1e-6)) + 0.05;
+  }
+  return {
+    M,
+    lut: buildGainLut(p.knee, p.curvePow),
+    colorW: p.color / 100,
+    detailW: p.detail / 100,
+    clarityW: p.clarity / 100,
+    portraitOn: !!p.portrait,
+    portraitW: (p.portraitStrength || 0) / 100,
+    radDetail: Math.max(2, Math.round(p.detailRadius * scale)),
+    radClarity: Math.max(3, Math.round(clarityRadiusFull * scale)),
+    exposureMode,
+    F,
+    comp,
+    K,
+  };
+}
+
+/** 肤色检测（YCbCr 范围 + 软边界），返回 0..1 */
+function skinMask(r, g, b, luma) {
+  if (luma < 40) return 0;
+  const cr = 0.5 * r - 0.4187 * g - 0.0813 * b + 128;
+  const cb = -0.1687 * r - 0.3313 * g + 0.5 * b + 128;
+  const a = smoothstep(126, 140, cr) * (1 - smoothstep(172, 186, cr));
+  const c = smoothstep(68, 82, cb) * (1 - smoothstep(124, 138, cb));
+  return Math.min(1, a * c) * smoothstep(40, 60, luma);
+}
+
+/** 由单个像素计算归一化增益 g（0..1） */
+function gainForPixel(profile, luma, maxc, detailRaw, clarityRaw, r, g, b) {
+  let metric = Math.max(luma, profile.colorW * maxc);
+  if (detailRaw > 0) metric += profile.detailW * detailRaw;
+  if (clarityRaw > 0) metric += profile.clarityW * clarityRaw;
+  if (metric > 255) metric = 255;
+  let gv = profile.lut[metric | 0];
+  if (profile.portraitOn && profile.portraitW > 0) {
+    const sm = skinMask(r, g, b, luma);
+    if (sm > 0) gv *= 1 - profile.portraitW * sm;
+  }
+  return gv;
+}
+
+function srgbToLinear(v) {
+  v /= 255;
+  return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+}
+function linearToSrgb255(v) {
+  v = v < 0 ? 0 : v > 1 ? 1 : v;
+  const s = v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+  return Math.round(s * 255);
+}
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((b) => b ? resolve(b) : reject(new Error("canvas.toBlob 失败")), type, quality);
+  });
+}
+
+/** 可分离盒式模糊（边缘钳制） */
+function boxBlurFloat(src, w, h, rad) {
+  const tmp = new Float32Array(w * h);
+  const out = new Float32Array(w * h);
+  const win = 2 * rad + 1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    let sum = 0;
+    for (let k = -rad; k <= rad; k++) {
+      const xx = k < 0 ? 0 : k > w - 1 ? w - 1 : k;
+      sum += src[row + xx];
+    }
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = sum / win;
+      const addX = x + rad + 1 < w ? x + rad + 1 : w - 1;
+      const subX = x - rad > 0 ? x - rad : 0;
+      sum += src[row + addX] - src[row + subX];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let sum = 0;
+    for (let k = -rad; k <= rad; k++) {
+      const yy = k < 0 ? 0 : k > h - 1 ? h - 1 : k;
+      sum += tmp[yy * w + x];
+    }
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = sum / win;
+      const addY = y + rad + 1 < h ? y + rad + 1 : h - 1;
+      const subY = y - rad > 0 ? y - rad : 0;
+      sum += tmp[addY * w + x] - tmp[subY * w + x];
+    }
+  }
+  return out;
+}
+
+/* ============================================================
+ * 增益图生成（分块，内存与图像大小基本无关）
+ * ============================================================ */
+async function buildGainMapJpeg(bitmap, gainW, gainH, profile) {
+  const scale = gainW / bitmap.width;
+  const gainCanvas = document.getElementById("workGain");
+  gainCanvas.width = gainW; gainCanvas.height = gainH;
+  const gctx = gainCanvas.getContext("2d", { willReadFrequently: true });
+
+  const tileCanvas = document.createElement("canvas");
+  const tctx = tileCanvas.getContext("2d", { willReadFrequently: true });
+
+  const TILE = 512;
+  const HALO = Math.max(profile.radDetail, profile.radClarity) + 2;
+  const dither = [-0.25, 0.25, 0.1, -0.1];
+
+  for (let ty = 0; ty < gainH; ty += TILE) {
+    for (let tx = 0; tx < gainW; tx += TILE) {
+      const tw = Math.min(TILE, gainW - tx);
+      const th = Math.min(TILE, gainH - ty);
+      const rx0 = Math.max(0, tx - HALO), ry0 = Math.max(0, ty - HALO);
+      const rx1 = Math.min(gainW, tx + tw + HALO), ry1 = Math.min(gainH, ty + th + HALO);
+      const rw = rx1 - rx0, rh = ry1 - ry0;
+      tileCanvas.width = rw; tileCanvas.height = rh;
+      tctx.clearRect(0, 0, rw, rh);
+      tctx.drawImage(bitmap, rx0 / scale, ry0 / scale, rw / scale, rh / scale, 0, 0, rw, rh);
+      const region = tctx.getImageData(0, 0, rw, rh);
+      const rd = region.data;
+
+      const lum = new Float32Array(rw * rh);
+      for (let q = 0, i = 0; q < rw * rh; q++, i += 4) {
+        lum[q] = (54 * rd[i] + 183 * rd[i + 1] + 19 * rd[i + 2]) / 256;
+      }
+      const avgDetail = boxBlurFloat(lum, rw, rh, profile.radDetail);
+      const avgClarity = boxBlurFloat(lum, rw, rh, profile.radClarity);
+
+      const outImg = gctx.createImageData(tw, th);
+      const od = outImg.data;
+      for (let cy = 0; cy < th; cy++) {
+        const ry = ty + cy - ry0;
+        const rowPh = (ty + cy) & 1;
+        for (let cx = 0; cx < tw; cx++) {
+          const rx = tx + cx - rx0;
+          const q = ry * rw + rx;
+          const i = q * 4;
+          const r = rd[i], g = rd[i + 1], b = rd[i + 2];
+          const maxc = r > g ? (r > b ? r : b) : (g > b ? g : b);
+          const detailRaw = lum[q] - avgDetail[q];
+          const clarityRaw = lum[q] - avgClarity[q];
+          let v = gainForPixel(profile, lum[q], maxc, detailRaw, clarityRaw, r, g, b);
+          if (profile.exposureMode) {
+            // 曝光模式：增益 = 高光增强(2^(M·g)) × 软肩压缩恢复量(z/zd)
+            const Ylin = 0.2126 * SRGB_LIN_LUT[r] + 0.7152 * SRGB_LIN_LUT[g] + 0.0722 * SRGB_LIN_LUT[b];
+            const z = Ylin * profile.F;
+            const zd = toneMapExposure(z, profile.comp);
+            const recover = zd > 1e-7 ? Math.log2(z / zd) : 0;
+            v = clamp((profile.M * v + recover) / profile.K, 0, 1);
+          }
+          if (v > 0.02 && v < 0.98) v += dither[((tx + cx) & 1) | (rowPh << 1)] / 255;
+          v = clamp(v, 0, 1);
+          const qv = Math.round(v * 255);
+          const oi = (cy * tw + cx) * 4;
+          od[oi] = qv; od[oi + 1] = qv; od[oi + 2] = qv; od[oi + 3] = 255;
+        }
+      }
+      gctx.putImageData(outImg, tx, ty);
+    }
+  }
+  const blob = await canvasToBlob(gainCanvas, "image/jpeg", JPEG_QUALITY);
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/* ============================================================
+ * 预览 + 直方图
+ * ============================================================ */
+const HIST_BINS = 256;
+const HIST_SDR_STOPS = 8;   // 直方图 SDR 段覆盖 8 档（黑 -> SDR 白）
+const PREVIEW_MAX_EDGE = 1200;
+
+function clampInt(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+function drawPreviewSdr(ctx, canvas, imageSource, maxEdge) {
+  const sw = imageSource.width, sh = imageSource.height;
+  const scale = Math.min(1, maxEdge / Math.max(sw, sh));
+  const w = Math.max(1, Math.round(sw * scale)), h = Math.max(1, Math.round(sh * scale));
+  canvas.width = w; canvas.height = h;
+  ctx.drawImage(imageSource, 0, 0, w, h);
+  return { w, h };
+}
+
+function heatColor(t, out) {
+  const stops = [
+    [12, 12, 16], [20, 60, 170], [0, 180, 230], [250, 215, 60], [255, 255, 255],
+  ];
+  const x = clamp(t, 0, 1) * (stops.length - 1);
+  const i0 = Math.floor(x), f = x - i0;
+  const a = stops[i0], b = stops[Math.min(i0 + 1, stops.length - 1)];
+  out[0] = a[0] + (b[0] - a[0]) * f;
+  out[1] = a[1] + (b[1] - a[1]) * f;
+  out[2] = a[2] + (b[2] - a[2]) * f;
+}
+
+function reinhardNorm(c, peak, boost) {
+  const hdr = Math.max(0, (c + OFFSET) * boost - OFFSET);
+  return Math.min(1, (2 * hdr) / (hdr + peak));
+}
+
+/** 渲染左侧 SDR 底图：普通模式=原图；曝光模式=提亮后的底图（与导出的 SDR 部分一致） */
+function renderSdrBase() {
+  if (!state.bitmap) return null;
+  const ctx = els.cvSdr.getContext("2d", { willReadFrequently: true });
+  const p = readParams();
+  const ev = p.exposureEv || 0;
+  if (ev > 0.001) {
+    const F = Math.pow(2, ev);
+    const comp = (p.highlightCompress == null ? 80 : p.highlightCompress) / 100;
+    const size = drawPreviewSdr(ctx, els.cvSdr, state.bitmap, PREVIEW_MAX_EDGE);
+    const w = els.cvSdr.width, h = els.cvSdr.height;
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const lr = SRGB_LIN_LUT[d[i]], lg = SRGB_LIN_LUT[d[i + 1]], lb = SRGB_LIN_LUT[d[i + 2]];
+      const Y = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+      const z = Y * F;
+      const zd = toneMapExposure(z, comp);
+      const scale = z > 1e-7 ? zd / z : 0;
+      d[i] = linearToSrgb255(lr * F * scale);
+      d[i + 1] = linearToSrgb255(lg * F * scale);
+      d[i + 2] = linearToSrgb255(lb * F * scale);
+    }
+    ctx.putImageData(img, 0, 0);
+    els.cvHdr.width = w; els.cvHdr.height = h;
+    return size;
+  }
+  const size = drawPreviewSdr(ctx, els.cvSdr, state.bitmap, PREVIEW_MAX_EDGE);
+  els.cvHdr.width = els.cvSdr.width;
+  els.cvHdr.height = els.cvSdr.height;
+  return size;
+}
+
+/** 计算预览画面 + 统计 + 直方图，并按当前模式绘制右侧面板；返回统计 */
+function renderPreview() {
+  if (!state.bitmap) return null;
+  const src = els.cvSdr;
+  const w = src.width, h = src.height;
+  if (!w || !h) return null;
+  const sctx = src.getContext("2d", { willReadFrequently: true });
+  const dctx = els.cvHdr.getContext("2d", { willReadFrequently: true });
+  els.cvHdr.width = w; els.cvHdr.height = h;
+
+  const img = sctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  const out = dctx.createImageData(w, h);
+  const o = out.data;
+
+  setPreviewModeUi();
+  const params = readParams();
+  const scale = w / state.bitmap.width;
+  const profile = makeProfile(params, scale);
+  const M = profile.M;
+  const peak = Math.pow(2, Math.max(0.001, M));
+  const mode = els.previewMode.value;
+
+  const n = w * h;
+  const lum = new Float32Array(n);
+  const maxcArr = new Uint8Array(n);
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    lum[p] = (54 * r + 183 * g + 19 * b) / 256;
+    maxcArr[p] = r > g ? (r > b ? r : b) : (g > b ? g : b);
+  }
+  const avgDetail = boxBlurFloat(lum, w, h, profile.radDetail);
+  const avgClarity = boxBlurFloat(lum, w, h, profile.radClarity);
+
+  const hist = new Uint32Array(HIST_BINS);
+  const hdrStops = Math.max(0.05, M);
+  let boosted = 0, boostSum = 0, boostMax = 1, nonBlack = 0, hdrPix = 0;
+  const tmpCol = [0, 0, 0];
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    const gv = gainForPixel(profile, lum[p], maxcArr[p], lum[p] - avgDetail[p], lum[p] - avgClarity[p], r, g, b);
+    const boost = M > 1e-6 ? Math.pow(2, M * gv) : 1;
+    if (boost > 1.05) { boosted++; boostSum += boost; if (boost > boostMax) boostMax = boost; }
+
+    const ylin = 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
+    const hdrY = Math.max(0, (ylin + OFFSET) * boost - OFFSET);
+    if (hdrY > 1e-4) {
+      nonBlack++;
+      if (hdrY > 1.02) hdrPix++;
+      let x = Math.log2(hdrY);
+      if (!isFinite(x)) x = -HIST_SDR_STOPS;
+      x = clamp(x, -HIST_SDR_STOPS, hdrStops);
+      const bin = clampInt(Math.floor((x + HIST_SDR_STOPS) / (HIST_SDR_STOPS + hdrStops) * HIST_BINS), 0, HIST_BINS - 1);
+      hist[bin]++;
+    }
+
+    if (mode === "heatmap") {
+      heatColor(gv, tmpCol);
+      o[i] = tmpCol[0]; o[i + 1] = tmpCol[1]; o[i + 2] = tmpCol[2]; o[i + 3] = 255;
+      continue;
+    }
+    const lr = srgbToLinear(r), lg = srgbToLinear(g), lb = srgbToLinear(b);
+    let or, og, ob;
+    if (mode === "headroom") {
+      or = reinhardNorm(lr, peak, boost);
+      og = reinhardNorm(lg, peak, boost);
+      ob = reinhardNorm(lb, peak, boost);
+    } else {
+      const norm = peak > 1.0001 ? clamp((boost - 1) / (peak - 1), 0, 1) : 0;
+      const a = 0.5 * Math.pow(norm, 0.8);
+      or = lr * (1 - a) + a;
+      og = lg * (1 - a) + a;
+      ob = lb * (1 - a) + a;
+    }
+    o[i] = linearToSrgb255(or);
+    o[i + 1] = linearToSrgb255(og);
+    o[i + 2] = linearToSrgb255(ob);
+    o[i + 3] = 255;
+  }
+  dctx.putImageData(out, 0, 0);
+
+  const stats = {
+    boostedFrac: boosted / n,
+    meanBoost: boosted ? boostSum / boosted : 1,
+    maxBoost: boostMax,
+    hdrFrac: nonBlack ? hdrPix / nonBlack : 0,
+  };
+  drawHistogram(hist, hdrStops, stats.hdrFrac);
+  state.previewStats = stats;
+  updateHdrCaption();
+  if (mode === "truehdr") scheduleTrueHdrPreview();
+  return stats;
+}
+
+function drawHistogram(hist, hdrStops, hdrFrac) {
+  const cv = els.hist;
+  if (!cv) return;
+  const W = 1200, H = 156;
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, W, H);
+
+  const padL = 16, padR = 16, padT = 22, padB = 26;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const baseY = padT + plotH;
+  const sdrW = Math.max(40, plotW * HIST_SDR_STOPS / (HIST_SDR_STOPS + hdrStops));
+  const hdrW = plotW - sdrW;
+  const x0 = padL;
+  const whiteX = x0 + sdrW;
+
+  ctx.fillStyle = "#0e1116";
+  ctx.fillRect(x0, padT, plotW, plotH);
+  ctx.strokeStyle = "#232936";
+  ctx.strokeRect(x0 + 0.5, padT + 0.5, plotW - 1, plotH - 1);
+  ctx.beginPath();
+  ctx.moveTo(x0, baseY);
+  ctx.lineTo(x0 + plotW, baseY);
+  ctx.stroke();
+
+  let maxCount = 1;
+  for (let i = 0; i < HIST_BINS; i++) if (hist[i] > maxCount) maxCount = hist[i];
+  const bw = plotW / HIST_BINS + 0.7;
+  for (let i = 0; i < HIST_BINS; i++) {
+    const c = hist[i];
+    if (!c) continue;
+    const x = -HIST_SDR_STOPS + ((i + 0.5) / HIST_BINS) * (HIST_SDR_STOPS + hdrStops);
+    const hgt = Math.max(1, Math.sqrt(c / maxCount) * plotH * 0.96);
+    if (x <= 0) {
+      const px = x0 + (x + HIST_SDR_STOPS) / HIST_SDR_STOPS * sdrW;
+      ctx.fillStyle = "rgba(90,169,255,0.85)";
+      ctx.fillRect(px, baseY - hgt, bw, hgt);
+    } else {
+      if (hdrW < 2) continue;
+      const px = whiteX + (x / hdrStops) * hdrW;
+      ctx.fillStyle = "rgba(255,180,84,0.9)";
+      ctx.fillRect(px, baseY - hgt, bw, hgt);
+    }
+  }
+
+  ctx.save();
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = "rgba(232,234,240,0.85)";
+  ctx.beginPath();
+  ctx.moveTo(whiteX, padT);
+  ctx.lineTo(whiteX, baseY);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(90,169,255,0.95)";
+  ctx.fillText("SDR 影调（暗部 → SDR 白点）", x0 + sdrW / 2, padT - 7);
+  if (hdrW > 24) {
+    ctx.fillStyle = "rgba(255,180,84,0.95)";
+    ctx.fillText("HDR 提亮区（+档数）", whiteX + hdrW / 2, padT - 7);
+  }
+  ctx.fillStyle = "#9aa3b2";
+  ctx.fillText("SDR 白点", whiteX, H - 8);
+  ctx.fillText("暗部", x0 + 16, H - 8);
+  const tickStep = hdrStops >= 2 ? 1 : 0.5;
+  for (let s = tickStep; s <= hdrStops + 1e-6; s += tickStep) {
+    const px = whiteX + (s / hdrStops) * hdrW;
+    ctx.strokeStyle = "#2a3342";
+    ctx.beginPath();
+    ctx.moveTo(px, baseY);
+    ctx.lineTo(px, baseY + 4);
+    ctx.stroke();
+    if (hdrW > 40) {
+      ctx.fillStyle = "#9aa3b2";
+      ctx.fillText("+" + (Number.isInteger(s) ? s : s.toFixed(1)), px, H - 8);
+    }
+  }
+
+}
+
+/* ============================================================
+ * 主流程 / UI
+ * ============================================================ */
+const state = {
+  file: null,
+  originalBytes: null,
+  bitmap: null,
+  previewTimer: 0,
+  busy: false,
+  previewStats: null,
+  hdrPreviewTimer: 0,
+  hdrPreviewSeq: 0,
+  hdrPreviewUrl: null,
+  hdrHigh: false,
+  hdrStandard: false,
+  bigPreviewOpen: false,
+  bigPreviewTimer: 0,
+  bigPreviewSeq: 0,
+  bigPreviewUrl: null,
+  bigPreviewTime: 0,
+  controlsHome: null,
+  sdrBaseKey: null,
+  orientation: 1,
+  isPng: false,
+};
+
+const els = {
+  drop: document.getElementById("drop"),
+  file: document.getElementById("file"),
+  editor: document.getElementById("editor"),
+  result: document.getElementById("result"),
+  resultText: document.getElementById("resultText"),
+  previews: document.getElementById("previews"),
+  figHdr: document.getElementById("figHdr"),
+  histFig: document.getElementById("histFig"),
+  hist: document.getElementById("hist"),
+  histCaption: document.getElementById("histCaption"),
+  cvSdr: document.getElementById("cvSdr"),
+  cvHdr: document.getElementById("cvHdr"),
+  hdrImg: document.getElementById("hdrImg"),
+  hdrLink: document.getElementById("hdrLink"),
+  hdrLinkWrap: document.getElementById("hdrLinkWrap"),
+  captionHdr: document.getElementById("captionHdr"),
+  showAssist: document.getElementById("showAssist"),
+  previewMode: document.getElementById("previewMode"),
+  strength: document.getElementById("strength"),
+  strengthVal: document.getElementById("strengthVal"),
+  knee: document.getElementById("knee"),
+  kneeVal: document.getElementById("kneeVal"),
+  detail: document.getElementById("detail"),
+  detailVal: document.getElementById("detailVal"),
+  color: document.getElementById("color"),
+  colorVal: document.getElementById("colorVal"),
+  exposureEv: document.getElementById("exposureEv"),
+  exposureVal: document.getElementById("exposureVal"),
+  highlightCompress: document.getElementById("highlightCompress"),
+  compressVal: document.getElementById("compressVal"),
+  sdrCaption: document.getElementById("sdrCaption"),
+  curvePow: document.getElementById("curvePow"),
+  curveVal: document.getElementById("curveVal"),
+  detailRadius: document.getElementById("detailRadius"),
+  radiusVal: document.getElementById("radiusVal"),
+  clarity: document.getElementById("clarity"),
+  clarityVal: document.getElementById("clarityVal"),
+  portrait: document.getElementById("portrait"),
+  portraitStrength: document.getElementById("portraitStrength"),
+  portraitVal: document.getElementById("portraitVal"),
+  gainScale: document.getElementById("gainScale"),
+  resetParams: document.getElementById("resetParams"),
+  exportBtn: document.getElementById("exportBtn"),
+  resetBtn: document.getElementById("resetBtn"),
+  status: document.getElementById("status"),
+  meta: document.getElementById("meta"),
+  note: document.getElementById("note"),
+  controls: document.querySelector(".controls"),
+  bigViewBtn: document.getElementById("bigViewBtn"),
+  bigView: document.getElementById("bigView"),
+  bigStage: document.getElementById("bigStage"),
+  bigImg: document.getElementById("bigImg"),
+  bigStatus: document.getElementById("bigStatus"),
+  bigDock: document.getElementById("bigDock"),
+  bigFit: document.getElementById("bigFit"),
+  bigActual: document.getElementById("bigActual"),
+  bigDownload: document.getElementById("bigDownload"),
+  bigClose: document.getElementById("bigClose"),
+};
+
+function setStatus(msg, isWarn) {
+  els.status.textContent = msg || "";
+  els.status.style.color = isWarn ? "var(--warn)" : "var(--muted)";
+}
+
+// 检测当前浏览器/显示器是否能渲染 HDR（high = 有 HDR 余量；standard = 只有 SDR）
+(function detectHdrSupport() {
+  try {
+    const mqHigh = matchMedia("(dynamic-range: high)");
+    const mqStd = matchMedia("(dynamic-range: standard)");
+    state.hdrHigh = mqHigh.matches;
+    state.hdrStandard = mqStd.matches;
+    // 窗口从 SDR 屏拖到 HDR 屏（或反之）时自动更新
+    const onChange = () => {
+      state.hdrHigh = mqHigh.matches;
+      state.hdrStandard = mqStd.matches;
+      if (state.bitmap) {
+        updateHdrCaption();
+        updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
+      }
+    };
+    if (mqHigh.addEventListener) {
+      mqHigh.addEventListener("change", onChange);
+      mqStd.addEventListener("change", onChange);
+    }
+  } catch (e) {
+    state.hdrHigh = false;
+    state.hdrStandard = false;
+  }
+})();
+
+function hdrSupportText() {
+  if (state.hdrHigh) return "high（检测到 HDR 显示）";
+  if (state.hdrStandard) return "standard（未检测到 HDR 余量）";
+  return "未知（浏览器不支持 dynamic-range 检测）";
+}
+
+function setPreviewModeUi() {
+  const mode = els.previewMode.value;
+  const isTrue = mode === "truehdr";
+  if (els.cvHdr) els.cvHdr.classList.toggle("hidden", isTrue);
+  if (els.hdrImg) els.hdrImg.classList.toggle("hidden", !isTrue);
+  if (els.hdrLinkWrap) els.hdrLinkWrap.classList.toggle("hidden", !isTrue);
+}
+
+function scheduleTrueHdrPreview() {
+  clearTimeout(state.hdrPreviewTimer);
+  state.hdrPreviewTimer = setTimeout(() => { updateTrueHdrPreview(); }, 300);
+}
+
+/**
+ * 真 HDR 预览：把"预览尺寸的 SDR 基准图 + 当前参数的增益图"实时封装成 Ultra HDR JPG，
+ * 交给浏览器原生渲染（支持时即为真实 HDR；不支持时退化为 SDR）。
+ */
+async function updateTrueHdrPreview() {
+  if (!state.bitmap || els.previewMode.value !== "truehdr") return;
+  if (!els.cvSdr.width) return;
+  const seq = ++state.hdrPreviewSeq;
+  try {
+    const w = els.cvSdr.width, h = els.cvSdr.height;
+    const params = readParams();
+    const baseBlob = await canvasToBlob(els.cvSdr, "image/jpeg", 0.93);
+    const baseBytes = new Uint8Array(await baseBlob.arrayBuffer());
+    const profile = makeProfile(params, w / state.bitmap.width);
+    const gainMapJpeg = await buildGainMapJpeg(state.bitmap, w, h, profile);
+    const outBytes = assembleUltraHdr(
+      baseBytes, gainMapJpeg,
+      profile.exposureMode ? makeMeta(params.strength, profile.K) : makeMeta(params.strength)
+    );
+    if (seq !== state.hdrPreviewSeq) return; // 已有更新的请求，丢弃本次结果
+    const url = URL.createObjectURL(new Blob([outBytes], { type: "image/jpeg" }));
+    const old = state.hdrPreviewUrl;
+    state.hdrPreviewUrl = url;
+    els.hdrImg.src = url;
+    els.hdrLink.href = url;
+    if (old) setTimeout(() => URL.revokeObjectURL(old), 15000);
+  } catch (e) {
+    console.error("真 HDR 预览生成失败:", e);
+    setStatus("真 HDR 预览生成失败：" + e.message, true);
+  }
+}
+
+function readParams() {
+  return {
+    strength: parseFloat(els.strength.value),
+    knee: parseFloat(els.knee.value),
+    detail: parseFloat(els.detail.value),
+    color: parseFloat(els.color.value),
+    curvePow: parseFloat(els.curvePow.value),
+    detailRadius: parseFloat(els.detailRadius.value),
+    clarity: parseFloat(els.clarity.value),
+    portrait: els.portrait.checked,
+    portraitStrength: parseFloat(els.portraitStrength.value),
+    gainScale: parseFloat(els.gainScale.value) || 1,
+    exposureEv: parseFloat(els.exposureEv.value) || 0,
+    highlightCompress: parseFloat(els.highlightCompress.value),
+  };
+}
+
+function applyParamsToInputs(p) {
+  els.strength.value = p.strength;
+  els.knee.value = p.knee;
+  els.detail.value = p.detail;
+  els.color.value = p.color;
+  els.curvePow.value = p.curvePow;
+  els.detailRadius.value = p.detailRadius;
+  els.clarity.value = p.clarity;
+  els.portrait.checked = !!p.portrait;
+  els.portraitStrength.value = p.portraitStrength;
+  els.gainScale.value = String(p.gainScale);
+  els.exposureEv.value = p.exposureEv == null ? 0 : p.exposureEv;
+  els.highlightCompress.value = p.highlightCompress == null ? 80 : p.highlightCompress;
+}
+
+function updateParamLabels() {
+  const p = readParams();
+  const M = 3.0 * (p.strength / 100);
+  els.strengthVal.textContent = `${p.strength} → 最大 ${M.toFixed(2)} 档（${Math.pow(2, M).toFixed(1)}×）`;
+  els.kneeVal.textContent = `${p.knee}${p.knee <= 140 ? "（偏低）" : p.knee >= 195 ? "（偏高）" : ""}`;
+  els.detailVal.textContent = `${p.detail}%`;
+  els.colorVal.textContent = `${p.color}%`;
+  els.curveVal.textContent = `${p.curvePow.toFixed(2)}${p.curvePow >= 2.4 ? "（陡）" : p.curvePow <= 1.3 ? "（柔）" : ""}`;
+  els.radiusVal.textContent = `${p.detailRadius} px`;
+  els.clarityVal.textContent = `${p.clarity}%`;
+  els.portraitVal.textContent = `${p.portraitStrength}%`;
+  const ev = p.exposureEv || 0;
+  els.exposureVal.textContent = ev > 0.001
+    ? `+${ev.toFixed(1)} EV（底图提亮）`
+    : "0（不改变底图）";
+  els.compressVal.textContent = `${p.highlightCompress}%`;
+  updateSdrCaption();
+}
+
+function updateSdrCaption() {
+  if (!els.sdrCaption) return;
+  const ev = parseFloat(els.exposureEv.value) || 0;
+  if (ev > 0.001) {
+    els.sdrCaption.textContent = "SDR 底图（已整体提亮）—— 普通屏 / 旧软件 / 不支持 gain map 的地方看到的就是它；HDR 屏在此基础上高光再增强";
+  } else if (state.isPng) {
+    els.sdrCaption.textContent = "SDR 底图（PNG 已转成 JPEG）—— 普通屏 / 旧软件看到的就是它；HDR 屏在此基础上高光再增强";
+  } else {
+    els.sdrCaption.textContent = "SDR 原图 —— 普通屏、旧软件、不支持 gain map 的浏览器看到的样子（与导出文件完全一致）";
+  }
+}
+
+function updateHdrCaption() {
+  const mode = els.previewMode.value;
+  const M = 3.0 * (parseFloat(els.strength.value) / 100);
+  const peak = Math.pow(2, Math.max(0.001, M));
+  if (mode === "truehdr") {
+    els.captionHdr.textContent = `真 HDR 预览 —— 由浏览器原生渲染 gain map（本机 HDR：${hdrSupportText()}）。若这里和左侧 SDR 看起来一样，说明当前浏览器没有启用 HDR 图片渲染：macOS 上请用 Safari 打开本页，或直接看导出的 JPG。`;
+  } else if (mode === "heatmap") {
+    els.captionHdr.textContent = "增益热力图 —— 颜色越亮 = HDR 屏上提亮越多（黑色≈不变）；这是增益可视化，不是真实画面。";
+  } else if (mode === "headroom") {
+    els.captionHdr.textContent = "亮度余量示意 —— 压低整体亮度来表现“高光比 SDR 白亮多少”；整体变暗只是模拟方式，导出文件的 SDR 部分完全不变。";
+  } else {
+    els.captionHdr.textContent = `HDR 增益示意 —— 发白/变亮的区域就是 HDR 屏上会被提亮的区域（最高约 ${peak.toFixed(1)}×；示意，非真实画面）。`;
+  }
+  if (els.histCaption) {
+    let txt = "SDR / HDR 直方图 —— 左侧为 SDR 影调（8 档），白点右侧为 HDR 提亮区（0 到 +" + M.toFixed(1) + " 档，宽度按档数比例）";
+    if (state.previewStats) txt += "；HDR 高光像素约 " + (state.previewStats.hdrFrac * 100).toFixed(1) + "%";
+    els.histCaption.textContent = txt;
+  }
+}
+
+function applyAssistVisibility() {
+  const on = els.showAssist.checked;
+  els.histFig.classList.toggle("hidden", !on);
+  els.previews.classList.toggle("single", !on);
+}
+
+function updateMetaText(previewDims, outSize) {
+  if (!state.bitmap) return;
+  const b = state.originalBytes;
+  const p = readParams();
+  const px = state.bitmap.width * state.bitmap.height;
+  const gw = Math.max(1, Math.round(state.bitmap.width * p.gainScale));
+  const gh = Math.max(1, Math.round(state.bitmap.height * p.gainScale));
+  const M = 3.0 * (p.strength / 100);
+  const lines = [
+    `原图：<b>${state.bitmap.width}×${state.bitmap.height}</b>（${(px / 1e6).toFixed(1)} MP，${(((state.file && state.file.size) || b.length) / 1024).toFixed(0)} KB）`,
+    `输入格式：<b>${state.isPng ? "PNG → JPEG 底图（透明铺白、16-bit 降 8-bit）" : "JPG（原字节保留）"}</b>`,
+    `增益图：<b>${gw}×${gh}</b>（${(p.gainScale * 100).toFixed(0)}% 分辨率 · 小细节增强 · JPEG q=${JPEG_QUALITY.toFixed(2)}）`,
+    `本机 HDR 渲染：<b>${hdrSupportText()}</b>`,
+    `HDR 最大提升：<b>${Math.pow(2, M).toFixed(2)}×</b>（${M.toFixed(2)} 档）`,
+    `当前参数：起点 ${p.knee} · 细节 ${p.detail}% · 彩色 ${p.color}% · 曲线 ${p.curvePow.toFixed(2)} · 细节尺度 ${p.detailRadius}px · 通透 ${p.clarity}%${p.portrait ? " · 人像保护 " + p.portraitStrength + "%" : ""}`,
+  ];
+  if ((p.exposureEv || 0) > 0.001) {
+    lines.push(`整体曝光：<b>+${p.exposureEv.toFixed(1)} EV</b> · 高光柔化 ${p.highlightCompress}%`);
+    lines.push(`⚠ 曝光模式：SDR 底图已重新编码（原图字节不再逐字节保留；EXIF/ICC 尽量保留）`);
+  }
+  if (p.gainScale >= 1 && px > 60e6) {
+    lines.push(`⚠ 超大图（${(px / 1e6).toFixed(0)} MP）用全分辨率增益图内存占用较高，建议切「半分辨率」`);
+  }
+  const st = state.previewStats;
+  if (st && st.boostedFrac > 0) {
+    lines.push(`HDR 屏上预计：约 <b>${(st.boostedFrac * 100).toFixed(1)}%</b> 的像素被提亮，平均 <b>${st.meanBoost.toFixed(2)}×</b>（最高 ${st.maxBoost.toFixed(2)}×）`);
+  }
+  if (outSize) {
+    if (state.isPng) lines.push(`导出文件：<b>${(outSize / 1024).toFixed(0)} KB</b>`);
+    else lines.push(`导出文件：<b>${(outSize / 1024).toFixed(0)} KB</b>（+${(((outSize - b.length) / b.length) * 100).toFixed(0)}%）`);
+  }
+  els.meta.innerHTML = lines.join("<br>");
+}
+
+function schedulePreview() {
+  clearTimeout(state.previewTimer);
+  state.previewTimer = setTimeout(() => {
+    if (!state.bitmap) return;
+    updateParamLabels();
+    const _p = readParams();
+    const _key = `${((_p.exposureEv || 0).toFixed(2))}|${_p.highlightCompress}`;
+    if (state.sdrBaseKey !== _key) {
+      state.sdrBaseKey = _key;
+      if (!state.bigPreviewOpen) renderSdrBase();
+    }
+    if (state.bigPreviewOpen) {
+      scheduleBigHdrPreview();
+    } else if (els.showAssist.checked) {
+      renderPreview();
+    }
+    updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
+  }, 90);
+}
+
+function isPngBytes(bytes) {
+  return bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47;
+}
+
+/** 把带透明通道的图铺白底（HDR JPG 不支持透明；白底更符合常规观感） */
+function flattenOnWhite(source) {
+  const c = document.createElement("canvas");
+  c.width = source.width; c.height = source.height;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(source, 0, 0);
+  return c;
+}
+
+async function loadFile(file) {
+  if (!file) return;
+  const isJpeg = /jpe?g$/i.test(file.name) || file.type === "image/jpeg";
+  const isPng = /\.png$/i.test(file.name) || file.type === "image/png";
+  if (!isJpeg && !isPng) {
+    alert("目前支持 JPG / PNG 文件。");
+    return;
+  }
+  setStatus("正在读取文件…");
+  const rawBytes = new Uint8Array(await file.arrayBuffer());
+  const inputIsPng = isPng || isPngBytes(rawBytes);
+  let bytes = rawBytes;
+  let stripped = { mpf: 0, xmp: 0 };
+  let info = null;
+  if (!inputIsPng) {
+    const stripRes = stripStaleHdrMetadata(rawBytes);
+    bytes = stripRes.bytes;
+    stripped = stripRes.removed;
+    try { info = inspectOriginalJpeg(bytes); } catch (e) { info = null; }
+    if (!hasJpegEoi(bytes)) { setStatus("文件不完整（缺少 JPEG 结束标记），请重新导出", true); return; }
+  }
+
+  let bitmap;
+  try { bitmap = await createImageBitmap(file); } catch (e) {
+    setStatus("无法解码该文件（" + (inputIsPng ? "PNG" : "JPG") + "）：" + e.message, true); return;
+  }
+  if (inputIsPng) bitmap = flattenOnWhite(bitmap);
+
+  state.file = file;
+  state.originalBytes = bytes;
+  state.bitmap = bitmap;
+  state.isPng = inputIsPng;
+  state.previewStats = null;
+  state.orientation = (info && info.orientation) ? info.orientation : 1;
+  state.sdrBaseKey = null;
+
+  els.editor.classList.remove("hidden");
+  els.result.classList.add("hidden");
+  els.exportBtn.disabled = false;
+  els.resetBtn.disabled = false;
+  els.exportBtn.textContent = "导出 HDR JPG";
+  if (els.bigViewBtn) els.bigViewBtn.disabled = false;
+
+  updateParamLabels();
+  applyAssistVisibility();
+  renderSdrBase();
+  if (els.showAssist.checked) renderPreview();
+  updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
+
+  const warns = [];
+  if (inputIsPng) warns.push("PNG 输入：导出时底图会转成 JPEG（透明区域铺白、16-bit 降为 8-bit、PNG 元数据不保留）");
+  if (stripped.mpf || stripped.xmp) {
+    const parts = [];
+    if (stripped.mpf) parts.push("MPF×" + stripped.mpf);
+    if (stripped.xmp) parts.push("旧 XMP×" + stripped.xmp);
+    warns.push("已清理输入中残留的旧 HDR 元数据（" + parts.join("，") + "）");
+  }
+  if (info && info.hasXmp) warns.push("原图还含其它 XMP 段，导出时会保留它并追加 HDR 元数据；个别解析器可能优先读旧 XMP");
+  if (info && info.orientation && info.orientation !== 1) warns.push("照片带方向标记（Orientation=" + info.orientation + "），增益图可能与显示方向错位；建议在 LR 导出时应用方向");
+  els.note.className = "note" + (warns.length ? " warn" : "");
+  els.note.textContent = warns.length ? "⚠ " + warns.join("；") : "提示：导出的文件在不支持 HDR 的显示环境里和原图看起来一样，这是正常现象；只有 HDR 屏 + 支持的浏览器/相册才会显示更亮的高光。";
+  setStatus("就绪 · " + file.name);
+}
+
+/** 提取原图里的 EXIF / ICC 段（用于曝光模式重建底图后尽量保留元数据） */
+function extractAppSegments(bytes) {
+  const segs = [];
+  let pos = 2;
+  while (pos + 4 <= bytes.length) {
+    if (bytes[pos] !== 0xFF) break;
+    const m = bytes[pos + 1];
+    if (m < 0xE0 || m > 0xEF) break;
+    const len = (bytes[pos + 2] << 8) | bytes[pos + 3];
+    if (len < 2 || pos + 2 + len > bytes.length) break;
+    const payload = bytes.subarray(pos + 4, pos + 2 + len);
+    if ((m === 0xE1 && startsWith(payload, ascii("Exif\u0000\u0000"))) ||
+        (m === 0xE2 && startsWith(payload, ascii("ICC_PROFILE\u0000")))) {
+      segs.push(bytes.subarray(pos, pos + 2 + len));
+    }
+    pos += 2 + len;
+  }
+  return segs;
+}
+
+function insertSegmentsAfterApps(bytes, segs) {
+  if (!segs || !segs.length) return bytes;
+  const pos = findJpegInsertPos(bytes);
+  return concatBytes(bytes.subarray(0, pos), ...segs, bytes.subarray(pos));
+}
+
+/**
+ * 生成用于导出的 SDR 底图 JPEG（全分辨率）：
+ *  - applyExposure=true：整体曝光提升（线性光×2^EV + 高光软肩，色相/饱和度保持）
+ *  - applyExposure=false：仅把输入（如 PNG）重编码为 JPEG，像素内容保持一致
+ */
+async function buildSdrBaseJpeg(bitmap, params, applyExposure) {
+  const w = bitmap.width, h = bitmap.height;
+  const baseCanvas = document.createElement("canvas");
+  baseCanvas.width = w; baseCanvas.height = h;
+  const bctx = baseCanvas.getContext("2d", { willReadFrequently: true });
+  if (!applyExposure) {
+    bctx.drawImage(bitmap, 0, 0);
+  } else {
+    const F = Math.pow(2, params.exposureEv || 0);
+    const comp = (params.highlightCompress == null ? 80 : params.highlightCompress) / 100;
+    const tileCanvas = document.createElement("canvas");
+    const tctx = tileCanvas.getContext("2d", { willReadFrequently: true });
+    const TILE = 512;
+    for (let ty = 0; ty < h; ty += TILE) {
+      for (let tx = 0; tx < w; tx += TILE) {
+        const tw = Math.min(TILE, w - tx), th = Math.min(TILE, h - ty);
+        tileCanvas.width = tw; tileCanvas.height = th;
+        tctx.clearRect(0, 0, tw, th);
+        tctx.drawImage(bitmap, tx, ty, tw, th, 0, 0, tw, th);
+        const img = tctx.getImageData(0, 0, tw, th);
+        const d = img.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const lr = SRGB_LIN_LUT[d[i]], lg = SRGB_LIN_LUT[d[i + 1]], lb = SRGB_LIN_LUT[d[i + 2]];
+          const Y = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+          const z = Y * F;
+          const zd = toneMapExposure(z, comp);
+          const scale = z > 1e-7 ? zd / z : 0;
+          d[i] = linearToSrgb255(lr * F * scale);
+          d[i + 1] = linearToSrgb255(lg * F * scale);
+          d[i + 2] = linearToSrgb255(lb * F * scale);
+        }
+        bctx.putImageData(img, tx, ty);
+      }
+    }
+  }
+  const blob = await canvasToBlob(baseCanvas, "image/jpeg", 0.94);
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** 通用输出构建：普通模式（SDR 原字节保留）或曝光模式（重编码底图） */
+async function buildOutputBytesGeneric(bitmap, originalBytes, params, orientation, inputIsPng) {
+  const w0 = bitmap.width, h0 = bitmap.height;
+  const gainScale = params.gainScale || 1;
+  const gw = Math.max(1, Math.round(w0 * gainScale));
+  const gh = Math.max(1, Math.round(h0 * gainScale));
+  const profile = makeProfile(params, gainScale);
+  const needReencode = profile.exposureMode || !!inputIsPng;
+  let baseBytes = originalBytes;
+  let meta;
+  if (needReencode) {
+    baseBytes = await buildSdrBaseJpeg(bitmap, params, profile.exposureMode);
+    if (!inputIsPng && (!orientation || orientation === 1)) {
+      baseBytes = insertSegmentsAfterApps(baseBytes, extractAppSegments(originalBytes));
+    }
+    meta = profile.exposureMode ? makeMeta(params.strength, profile.K) : makeMeta(params.strength);
+  } else {
+    meta = makeMeta(params.strength);
+  }
+  const gainMapJpeg = await buildGainMapJpeg(bitmap, gw, gh, profile);
+  return { bytes: assembleUltraHdr(baseBytes, gainMapJpeg, meta), meta, profile };
+}
+
+/** 按当前参数生成最终导出字节，大图调试与导出共用 */
+async function buildExportBytes(params) {
+  const r = await buildOutputBytesGeneric(
+    state.bitmap, state.originalBytes, params, state.orientation, !!state.isPng
+  );
+  return r.bytes;
+}
+
+function setBigStatus(msg, isWarn) {
+  if (!els.bigStatus) return;
+  els.bigStatus.textContent = msg || "";
+  els.bigStatus.style.color = isWarn ? "var(--warn)" : "var(--muted)";
+}
+
+function scheduleBigHdrPreview() {
+  clearTimeout(state.bigPreviewTimer);
+  state.bigPreviewTimer = setTimeout(() => { generateBigHdrPreview(); }, 450);
+}
+
+async function generateBigHdrPreview() {
+  if (!state.bitmap || !state.bigPreviewOpen) return;
+  const seq = ++state.bigPreviewSeq;
+  const t0 = performance.now();
+  setBigStatus("正在按最终分辨率生成 HDR 预览…（大图可能需要几秒）");
+  try {
+    const params = readParams();
+    const bytes = await buildExportBytes(params);
+    const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+    const probe = new Image();
+    probe.src = url;
+    try { await probe.decode(); } catch (e) { /* ignore */ }
+    if (seq !== state.bigPreviewSeq) { URL.revokeObjectURL(url); return; }
+    const old = state.bigPreviewUrl;
+    state.bigPreviewUrl = url;
+    els.bigImg.src = url;
+    els.bigDownload.href = url;
+    const baseName = state.file ? state.file.name.replace(/\.[^.]+$/, "") : "preview";
+    els.bigDownload.download = baseName + "_HDR.jpg";
+    if (old) setTimeout(() => URL.revokeObjectURL(old), 15000);
+    const ms = Math.round(performance.now() - t0);
+    state.bigPreviewTime = ms;
+    setBigStatus(`已生成 ${probe.naturalWidth || "?"}×${probe.naturalHeight || "?"} · 最终分辨率 · 用时 ${ms} ms · 文件 ${(bytes.length / 1024 / 1024).toFixed(2)} MB · 本机 HDR：${hdrSupportText()}`);
+  } catch (e) {
+    console.error("大图 HDR 预览生成失败:", e);
+    setBigStatus("生成失败：" + e.message, true);
+  }
+}
+
+function openBigView() {
+  if (!state.bitmap || state.bigPreviewOpen) return;
+  state.bigPreviewOpen = true;
+  els.bigView.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  state.controlsHome = { parent: els.controls.parentNode, next: els.controls.nextSibling };
+  els.bigDock.appendChild(els.controls);
+  els.bigStage.classList.remove("actual");
+  els.bigImg.removeAttribute("src");
+  generateBigHdrPreview();
+}
+
+function closeBigView() {
+  if (!state.bigPreviewOpen) return;
+  state.bigPreviewOpen = false;
+  clearTimeout(state.bigPreviewTimer);
+  state.bigPreviewSeq++;
+  els.bigView.classList.add("hidden");
+  document.body.style.overflow = "";
+  if (state.controlsHome && state.controlsHome.parent) {
+    state.controlsHome.parent.insertBefore(els.controls, state.controlsHome.next);
+  }
+  state.controlsHome = null;
+  const old = state.bigPreviewUrl;
+  state.bigPreviewUrl = null;
+  els.bigImg.removeAttribute("src");
+  if (old) setTimeout(() => URL.revokeObjectURL(old), 3000);
+  if (state.bitmap && els.showAssist.checked) renderPreview();
+  updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
+}
+
+async function exportHdr() {
+  if (!state.bitmap || state.busy) return;
+  const params = readParams();
+  if (params.strength <= 0) {
+    setStatus("强度为 0：结果与原图完全相同，无需导出。请把强度调大。", true);
+    return;
+  }
+  state.busy = true;
+  els.exportBtn.disabled = true;
+  els.exportBtn.textContent = "处理中…";
+  setStatus("正在生成增益图（大图可能需要几秒）…");
+  const t0 = performance.now();
+  try {
+    const gainScale = params.gainScale || 1;
+    const w0 = state.bitmap.width, h0 = state.bitmap.height;
+    if (gainScale >= 1 && w0 * h0 > 24e6) {
+      setStatus("正在生成全分辨率增益图（大图可能需要几秒到十几秒）…");
+    }
+    const outBytes = await buildExportBytes(params);
+    setStatus("正在封装 Ultra HDR 文件…");
+
+    const baseName = state.file.name.replace(/\.[^.]+$/, "");
+    const blob = new Blob([outBytes], { type: "image/jpeg" });
+    triggerDownload(blob, baseName + "_HDR.jpg");
+
+    const ms = Math.round(performance.now() - t0);
+    updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, outBytes.length);
+    setStatus(`完成 · 用时 ${ms} ms · 已开始下载`, false);
+
+    els.result.classList.remove("hidden");
+    els.resultText.textContent = `已生成 ${baseName}_HDR.jpg（${(outBytes.length / 1024).toFixed(0)} KB）。` +
+      (gainScale < 1 ? `增益图按 ${gainScale * 100}% 分辨率合成（小细节会弱一些）。` : "") +
+      " 请在四类设备上按下面步骤实测：HDR 屏上高光应比原图更亮，普通屏应与原图一致。";
+  } catch (e) {
+    console.error(e);
+    setStatus("失败：" + e.message, true);
+  } finally {
+    state.busy = false;
+    els.exportBtn.disabled = false;
+    els.exportBtn.textContent = "导出 HDR JPG";
+  }
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 3000);
+}
+
+/* ============================================================
+ * 事件绑定
+ * ============================================================ */
+function bindUi() {
+  els.drop.addEventListener("click", () => els.file.click());
+  els.drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") els.file.click(); });
+  els.file.addEventListener("change", () => loadFile(els.file.files[0]));
+
+  ["dragenter", "dragover"].forEach((t) => els.drop.addEventListener(t, (e) => {
+    e.preventDefault(); els.drop.classList.add("hover");
+  }));
+  ["dragleave", "drop"].forEach((t) => els.drop.addEventListener(t, (e) => {
+    e.preventDefault(); els.drop.classList.remove("hover");
+  }));
+  els.drop.addEventListener("drop", (e) => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+  document.addEventListener("dragover", (e) => e.preventDefault());
+  document.addEventListener("drop", (e) => e.preventDefault());
+
+  const sliders = [els.strength, els.knee, els.detail, els.color, els.curvePow,
+                   els.detailRadius, els.clarity, els.portraitStrength,
+                   els.exposureEv, els.highlightCompress];
+  sliders.forEach((inp) => {
+    inp.addEventListener("input", () => { updateParamLabels(); schedulePreview(); });
+  });
+  els.portrait.addEventListener("change", () => { updateParamLabels(); schedulePreview(); });
+  els.gainScale.addEventListener("change", () => {
+    updateParamLabels();
+    if (state.bitmap) updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
+  });
+  els.showAssist.addEventListener("change", () => {
+    applyAssistVisibility();
+    if (state.bitmap && els.showAssist.checked) {
+      renderPreview();
+      updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
+    }
+  });
+  els.previewMode.addEventListener("change", () => {
+    setPreviewModeUi();
+    if (!state.bitmap || !els.showAssist.checked) return;
+    renderPreview();
+    if (els.previewMode.value === "truehdr") updateTrueHdrPreview();
+  });
+  els.resetParams.addEventListener("click", () => {
+    applyParamsToInputs(DEFAULT_PARAMS);
+    updateParamLabels();
+    schedulePreview();
+  });
+  if (els.bigViewBtn) els.bigViewBtn.addEventListener("click", openBigView);
+  if (els.figHdr) els.figHdr.addEventListener("click", (e) => {
+    if (e.target && e.target.closest && e.target.closest("a")) return;
+    openBigView();
+  });
+  if (els.bigClose) els.bigClose.addEventListener("click", closeBigView);
+  if (els.bigFit) els.bigFit.addEventListener("click", () => els.bigStage.classList.remove("actual"));
+  if (els.bigActual) els.bigActual.addEventListener("click", () => els.bigStage.classList.add("actual"));
+  document.addEventListener("keydown", (e) => {
+    if (state.bigPreviewOpen && e.key === "Escape") closeBigView();
+  });
+  els.exportBtn.addEventListener("click", exportHdr);
+  els.resetBtn.addEventListener("click", () => {
+    state.bitmap && state.bitmap.close && state.bitmap.close();
+    state.bitmap = null; state.file = null; state.originalBytes = null; state.previewStats = null;
+    els.editor.classList.add("hidden");
+    els.result.classList.add("hidden");
+    els.file.value = "";
+    setStatus("");
+  });
+}
+
+/* ============================================================
+ * 测试钩子（headless Chrome / 自动化验证）
+ * ============================================================ */
+window.__hdrApp = {
+  version: "0.7",
+  defaultParams: DEFAULT_PARAMS,
+  async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt) {
+    let params;
+    if (paramsOrStrength == null || typeof paramsOrStrength === "number") {
+      params = Object.assign({}, DEFAULT_PARAMS, {
+        strength: paramsOrStrength == null ? DEFAULT_PARAMS.strength : paramsOrStrength,
+        gainScale: gainScaleOpt || 1,
+      });
+    } else {
+      params = Object.assign({}, DEFAULT_PARAMS, paramsOrStrength);
+      if (gainScaleOpt != null) params.gainScale = gainScaleOpt;
+    }
+    const raw = new Uint8Array(buffer);
+    const inputIsPng = isPngBytes(raw);
+    const clean = inputIsPng ? raw : stripStaleHdrMetadata(raw).bytes;
+    const blob = new Blob([clean], { type: inputIsPng ? "image/png" : "image/jpeg" });
+    let bitmap = await createImageBitmap(blob);
+    if (inputIsPng) bitmap = flattenOnWhite(bitmap);
+    const orientation = inputIsPng ? 1 : (() => { try { return inspectOriginalJpeg(clean).orientation || 1; } catch (e) { return 1; } })();
+    const gainScale = params.gainScale || 1;
+    const r = await buildOutputBytesGeneric(bitmap, clean, params, orientation, inputIsPng);
+    bitmap.close && bitmap.close();
+    return { bytes: r.bytes, gainScale, meta: r.meta, params };
+  },
+};
+
+bindUi();
+if (state.hdrHigh) els.previewMode.value = "truehdr";
+setPreviewModeUi();
+updateParamLabels();
+</script>
+</body>
+</html>
