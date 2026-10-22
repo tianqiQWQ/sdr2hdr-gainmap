@@ -56,8 +56,41 @@ const SHOTS = path.join(ROOT, "tests");
   }));
   console.log("bottom nav:", JSON.stringify(nav));
   if (!nav.bottomVisible || !nav.exportEnabled || !nav.previewEnabled) errors.push("bottom navigation not enabled");
-  await shot("ui_v10_edit.png");
+  await shot("ui_v11_edit.png");
   console.log("meta:\n" + (await page.$eval("#meta", (el) => el.innerText)));
+
+  // ---- 直方图尺寸 + 悬停提示 ----
+  const histBox = await page.$eval("#hist", (el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  console.log("histogram size:", histBox.w + "x" + histBox.h);
+  if (histBox.h < 180 || histBox.w < 300) errors.push("histogram too small");
+  await page.mouse.move(histBox.x + histBox.w * 0.4, histBox.y + histBox.h * 0.5);
+  await new Promise((r) => setTimeout(r, 250));
+  const histTip = await page.evaluate(() => {
+    const t = document.getElementById("tip");
+    return { visible: !t.classList.contains("hidden"), text: t.innerText.replace(/\s+/g, " ").slice(0, 60) };
+  });
+  console.log("histogram tooltip:", JSON.stringify(histTip));
+  if (!histTip.visible) errors.push("histogram hover tooltip missing");
+  await shot("ui_v11_hist_tooltip.png");
+
+  // ---- 参数悬停说明 ----
+  const sBox = await page.$eval("#strength", (el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  await page.mouse.move(sBox.x + sBox.w * 0.5, sBox.y + sBox.h * 0.5);
+  await new Promise((r) => setTimeout(r, 250));
+  const paramTip = await page.evaluate(() => {
+    const t = document.getElementById("tip");
+    return { visible: !t.classList.contains("hidden"), text: t.innerText.replace(/\s+/g, " ").slice(0, 60) };
+  });
+  console.log("parameter tooltip:", JSON.stringify(paramTip));
+  if (!paramTip.visible) errors.push("parameter hover tooltip missing");
+  await page.mouse.move(10, 10);
+  await new Promise((r) => setTimeout(r, 200));
 
   // ---- 参数 / 曝光 / 高级 / 热力图 / 真 HDR 回归 ----
   await setSlider("exposureEv", 1.2);

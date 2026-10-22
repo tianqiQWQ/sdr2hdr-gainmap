@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDR → HDR 转换器（本地网页版）v0.10</title>
+<title>SDR → HDR 转换器（本地网页版）v0.11</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -95,8 +95,9 @@
   .hdr-link { padding: 4px 12px 10px; }
   .hdr-link a { color: var(--accent); font-size: 12px; text-decoration: none; }
   .hdr-link a:hover { text-decoration: underline; }
-  .hist-fig { margin-top: 14px; }
-  .hist-fig canvas { height: 132px; }
+  .hist-fig { margin-top: 0; }
+  .hist-fig canvas { height: 208px; display: block; width: 100%; cursor: crosshair; }
+  .hist-fig figcaption { display: none; }
   .controls { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
   /* 参数栏窄，滑块改为两行式（标签+数值一行，滑块独立一行） */
   .side-panel .ctl-grid { grid-template-columns: 1fr; gap: 12px; margin-top: 10px; }
@@ -217,6 +218,13 @@
   .exp-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
   #exportInfo { font-size: 12.5px; line-height: 1.9; }
   #exportStatus { margin-top: 8px; }
+  .tip {
+    position: fixed; z-index: 2000; max-width: 280px;
+    background: #1d2430; border: 1px solid #39455a; border-radius: 8px;
+    padding: 8px 10px; color: #dfe6f2; font-size: 12px; line-height: 1.45;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .5); pointer-events: none;
+  }
+  .tip b { color: #9ecbff; font-weight: 600; }
   .busy { opacity: .6; pointer-events: none; }
   ol.steps { margin: 10px 0 0; padding-left: 20px; color: var(--muted); font-size: 12.5px; }
   ol.steps li { margin: 3px 0; }
@@ -225,8 +233,8 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.10 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.10 更新：新增底部导航与独立导出界面（JPEG 质量 / 文字与 Logo 水印），成品预览改为全屏</div>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.11 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.11 更新：直方图重做为平滑 RGB/亮度曲线并放大铺满；悬停直方图或参数可查看具体含义</div>
   <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
      <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
 </header>
@@ -423,6 +431,7 @@
 </div>
 
 <canvas id="workGain" class="hidden"></canvas>
+<div id="tip" class="tip hidden"></div>
 
 <script>
 "use strict";
@@ -1042,11 +1051,17 @@ function renderPreview() {
   const avgClarity = boxBlurFloat(lum, w, h, profile.radClarity);
 
   const hist = new Uint32Array(HIST_BINS);
+  const histR = new Uint32Array(HIST_BINS);
+  const histG = new Uint32Array(HIST_BINS);
+  const histB = new Uint32Array(HIST_BINS);
+  const histLum = new Uint32Array(HIST_BINS);
   const hdrStops = Math.max(0.05, M);
   let boosted = 0, boostSum = 0, boostMax = 1, nonBlack = 0, hdrPix = 0;
   const tmpCol = [0, 0, 0];
   for (let p = 0, i = 0; p < n; p++, i += 4) {
     const r = d[i], g = d[i + 1], b = d[i + 2];
+    histR[r]++; histG[g]++; histB[b]++;
+    histLum[clampInt(lum[p] | 0, 0, 255)]++;
     const gv = gainForPixel(profile, lum[p], maxcArr[p], lum[p] - avgDetail[p], lum[p] - avgClarity[p], r, g, b);
     const boost = M > 1e-6 ? Math.pow(2, M * gv) : 1;
     if (boost > 1.05) { boosted++; boostSum += boost; if (boost > boostMax) boostMax = boost; }
@@ -1094,94 +1109,168 @@ function renderPreview() {
     maxBoost: boostMax,
     hdrFrac: nonBlack ? hdrPix / nonBlack : 0,
   };
-  drawHistogram(hist, hdrStops, stats.hdrFrac);
+  drawHistogram(hist, hdrStops, stats.hdrFrac, { r: histR, g: histG, b: histB, lum: histLum });
   state.previewStats = stats;
   updateHdrCaption();
   if (mode === "truehdr") scheduleTrueHdrPreview();
   return stats;
 }
 
-function drawHistogram(hist, hdrStops, hdrFrac) {
+/** 高斯平滑直方图（用于自然曲线） */
+function smoothHist(arr, radius) {
+  const n = arr.length;
+  const out = new Float32Array(n);
+  radius = Math.max(1, radius | 0);
+  const sigma = radius / 2;
+  const kernel = [];
+  let sum = 0;
+  for (let k = -radius; k <= radius; k++) {
+    const w = Math.exp(-(k * k) / (2 * sigma * sigma));
+    kernel.push(w); sum += w;
+  }
+  for (let i = 0; i < n; i++) {
+    let acc = 0;
+    for (let k = -radius; k <= radius; k++) {
+      const j = i + k;
+      // 边缘按边界值延伸，避免两端塌陷
+      const jj = j < 0 ? 0 : j >= n ? n - 1 : j;
+      acc += arr[jj] * kernel[k + radius];
+    }
+    out[i] = acc / sum;
+  }
+  return out;
+}
+
+function histPath(ctx, values, x0, y0, w, h, maxVal) {
+  const n = values.length;
+  const xAt = (i) => x0 + (i / (n - 1)) * w;
+  const yAt = (i) => y0 + h - Math.sqrt(Math.max(0, values[i]) / maxVal) * h;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0 + h);
+  ctx.lineTo(xAt(0), yAt(0));
+  for (let i = 1; i < n; i++) {
+    const xc = (xAt(i - 1) + xAt(i)) / 2;
+    const yc = (yAt(i - 1) + yAt(i)) / 2;
+    ctx.quadraticCurveTo(xAt(i - 1), yAt(i - 1), xc, yc);
+  }
+  ctx.lineTo(xAt(n - 1), yAt(n - 1));
+  ctx.lineTo(x0 + w, y0 + h);
+  ctx.closePath();
+}
+
+function drawHistogram(hist, hdrStops, hdrFrac, chans) {
   const cv = els.hist;
   if (!cv) return;
-  const W = 1200, H = 156;
-  cv.width = W; cv.height = H;
+  const cssW = Math.max(240, cv.clientWidth || cv.parentElement.clientWidth || 356);
+  const cssH = Math.max(140, cv.clientHeight || 208);
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  cv.width = Math.round(cssW * dpr);
+  cv.height = Math.round(cssH * dpr);
   const ctx = cv.getContext("2d");
-  ctx.clearRect(0, 0, W, H);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
 
-  const padL = 16, padR = 16, padT = 22, padB = 26;
-  const plotW = W - padL - padR;
-  const plotH = H - padT - padB;
-  const baseY = padT + plotH;
-  const sdrW = Math.max(40, plotW * HIST_SDR_STOPS / (HIST_SDR_STOPS + hdrStops));
+  const pad = 4;
+  const x0 = pad, y0 = pad;
+  const plotW = cssW - pad * 2;
+  const plotH = cssH - pad * 2;
+  const baseY = y0 + plotH;
+  const sdrW = Math.max(60, plotW * HIST_SDR_STOPS / (HIST_SDR_STOPS + hdrStops));
   const hdrW = plotW - sdrW;
-  const x0 = padL;
   const whiteX = x0 + sdrW;
 
-  ctx.fillStyle = "#0e1116";
-  ctx.fillRect(x0, padT, plotW, plotH);
-  ctx.strokeStyle = "#232936";
-  ctx.strokeRect(x0 + 0.5, padT + 0.5, plotW - 1, plotH - 1);
-  ctx.beginPath();
-  ctx.moveTo(x0, baseY);
-  ctx.lineTo(x0 + plotW, baseY);
-  ctx.stroke();
-
-  let maxCount = 1;
-  for (let i = 0; i < HIST_BINS; i++) if (hist[i] > maxCount) maxCount = hist[i];
-  const bw = plotW / HIST_BINS + 0.7;
-  for (let i = 0; i < HIST_BINS; i++) {
-    const c = hist[i];
-    if (!c) continue;
-    const x = -HIST_SDR_STOPS + ((i + 0.5) / HIST_BINS) * (HIST_SDR_STOPS + hdrStops);
-    const hgt = Math.max(1, Math.sqrt(c / maxCount) * plotH * 0.96);
-    if (x <= 0) {
-      const px = x0 + (x + HIST_SDR_STOPS) / HIST_SDR_STOPS * sdrW;
-      ctx.fillStyle = "rgba(90,169,255,0.85)";
-      ctx.fillRect(px, baseY - hgt, bw, hgt);
-    } else {
-      if (hdrW < 2) continue;
-      const px = whiteX + (x / hdrStops) * hdrW;
-      ctx.fillStyle = "rgba(255,180,84,0.9)";
-      ctx.fillRect(px, baseY - hgt, bw, hgt);
-    }
+  // 背景
+  ctx.fillStyle = "#0c0f14";
+  ctx.fillRect(0, 0, cssW, cssH);
+  // 网格：SDR 影调按档位，HDR 区按提亮档数
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  ctx.lineWidth = 1;
+  for (let s = 1; s < HIST_SDR_STOPS; s++) {
+    const x = x0 + (s / HIST_SDR_STOPS) * sdrW;
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, baseY); ctx.stroke();
+  }
+  const tick = hdrStops >= 2 ? 1 : 0.5;
+  for (let s = tick; s <= hdrStops + 1e-6; s += tick) {
+    const x = whiteX + (s / hdrStops) * hdrW;
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, baseY); ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.035)";
+  for (let i = 1; i < 4; i++) {
+    const y = y0 + (i / 4) * plotH;
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + plotW, y); ctx.stroke();
   }
 
+  const ch = chans || {};
+  const makeMax = (arr) => {
+    let m = 1;
+    for (let i = 0; i < arr.length; i++) if (arr[i] > m) m = arr[i];
+    return m;
+  };
+
+  // SDR 区：RGB 通道叠加 + 亮度曲线
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, y0, sdrW, plotH);
+  ctx.clip();
+  const sdrMax = Math.max(makeMax(ch.lum || hist), makeMax(ch.r || []), makeMax(ch.g || []), makeMax(ch.b || []));
+  const channels = [
+    { arr: ch.r, color: "rgba(255,92,92,0.55)" },
+    { arr: ch.g, color: "rgba(86,220,120,0.55)" },
+    { arr: ch.b, color: "rgba(86,156,255,0.55)" },
+  ];
+  ctx.globalCompositeOperation = "lighter";
+  for (const c of channels) {
+    if (!c.arr) continue;
+    const sm = smoothHist(c.arr, 5);
+    histPath(ctx, sm, x0, y0, sdrW, plotH, sdrMax);
+    const g = ctx.createLinearGradient(0, y0, 0, baseY);
+    g.addColorStop(0, c.color);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = "source-over";
+  if (ch.lum) {
+    const sm = smoothHist(ch.lum, 5);
+    histPath(ctx, sm, x0, y0, sdrW, plotH, sdrMax);
+    ctx.strokeStyle = "rgba(236,241,248,0.72)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // HDR 区：提亮档数分布（平滑橙色面积）
+  if (hdrW > 4) {
+    let hdrMax = 1;
+    for (let i = 0; i < hist.length; i++) if (hist[i] > hdrMax) hdrMax = hist[i];
+    const sm = smoothHist(hist, 5);
+    histPath(ctx, sm, whiteX, y0, hdrW, plotH, hdrMax);
+    const g = ctx.createLinearGradient(0, y0, 0, baseY);
+    g.addColorStop(0, "rgba(255,178,84,0.85)");
+    g.addColorStop(1, "rgba(255,178,84,0.08)");
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,196,120,0.9)";
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+  }
+
+  // SDR 白点分界线
   ctx.save();
   ctx.setLineDash([3, 3]);
-  ctx.strokeStyle = "rgba(232,234,240,0.85)";
+  ctx.strokeStyle = "rgba(232,234,240,0.5)";
   ctx.beginPath();
-  ctx.moveTo(whiteX, padT);
+  ctx.moveTo(whiteX, y0);
   ctx.lineTo(whiteX, baseY);
   ctx.stroke();
   ctx.restore();
 
-  ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillStyle = "rgba(90,169,255,0.95)";
-  ctx.fillText("SDR 影调（暗部 → SDR 白点）", x0 + sdrW / 2, padT - 7);
-  if (hdrW > 24) {
-    ctx.fillStyle = "rgba(255,180,84,0.95)";
-    ctx.fillText("HDR 提亮区（+档数）", whiteX + hdrW / 2, padT - 7);
-  }
-  ctx.fillStyle = "#9aa3b2";
-  ctx.fillText("SDR 白点", whiteX, H - 8);
-  ctx.fillText("暗部", x0 + 16, H - 8);
-  const tickStep = hdrStops >= 2 ? 1 : 0.5;
-  for (let s = tickStep; s <= hdrStops + 1e-6; s += tickStep) {
-    const px = whiteX + (s / hdrStops) * hdrW;
-    ctx.strokeStyle = "#2a3342";
-    ctx.beginPath();
-    ctx.moveTo(px, baseY);
-    ctx.lineTo(px, baseY + 4);
-    ctx.stroke();
-    if (hdrW > 40) {
-      ctx.fillStyle = "#9aa3b2";
-      ctx.fillText("+" + (Number.isInteger(s) ? s : s.toFixed(1)), px, H - 8);
-    }
-  }
-
+  state.histLayout = {
+    cssW, cssH, x0, y0, plotW, plotH, sdrW, hdrW, whiteX, hdrStops,
+    chans: ch, hdrHist: hist,
+  };
 }
+
 
 /* ============================================================
  * 主流程 / UI
@@ -1210,6 +1299,8 @@ const state = {
   autoPrefix: "",
   wmLogoBitmap: null,
   exportOpts: null,
+  histLayout: null,
+  histHover: false,
 };
 
 const els = {
@@ -1271,6 +1362,8 @@ const els = {
   bigActual: document.getElementById("bigActual"),
   bigDownload: document.getElementById("bigDownload"),
   bigClose: document.getElementById("bigClose"),
+
+  tip: document.getElementById("tip"),
 
   bottomBar: document.getElementById("bottomBar"),
   editTab: document.getElementById("editTab"),
@@ -2206,6 +2299,107 @@ function triggerDownload(blob, filename) {
 /* ============================================================
  * 事件绑定
  * ============================================================ */
+/* ============================================================
+ * 悬浮提示（直方图 + 参数说明）
+ * ============================================================ */
+const PARAM_TIPS = {
+  strength: "<b>HDR 强度</b><br>最亮高光在 HDR 屏上提升的倍数。调高→灯光/天空/反光更亮更通透；调低→更克制自然。",
+  knee: "<b>提亮起点</b><br>从多亮的像素开始参与提亮。调低→中间调和背景也变亮；调高→只提亮真正的高光，背景保持暗。",
+  detail: "<b>细节增强</b><br>小尺寸结构（雨丝、树叶、文字、反光）的额外提亮力度。调高细节更明显，过高可能放大噪点。",
+  color: "<b>彩色高光</b><br>红/蓝灯光、霓虹等彩色高光参与提亮的程度。调高彩色灯更亮更艳，过高可能偏色。",
+  exposureEv: "<b>整体曝光</b><br>类似 PS 32-bit 拉曝光，把整张 SDR 底图整体提亮（背景/中间调一起变亮），高光用软肩压缩。0 = 不改变底图。",
+  curvePow: "<b>过渡曲线</b><br>从提亮起点到纯白的过渡陡缓。数值大→过渡更硬、边缘更明显；数值小→更柔和。",
+  detailRadius: "<b>细节尺度</b><br>多小的结构算“小细节”。调小→只提亮很小的结构；调大→更大范围参与。",
+  clarity: "<b>通透感</b><br>大范围明暗层次/局部对比。调高→画面更通透有层次，过高可能显得生硬。",
+  highlightCompress: "<b>高光柔化</b><br>整体曝光模式下的高光滚降。0% = 直接裁剪（硬）；80% ≈ PS 拉曝光的自然过渡；100% 压缩最强。",
+  portraitStrength: "<b>人像保护强度</b><br>肤色区域降低提亮的力度。调高→脸部更不容易过亮。",
+  portrait: "<b>人像保护</b><br>自动检测肤色区域并降低提亮，避免人像脸部/皮肤过亮。",
+  showAssist: "<b>显示 HDR 辅助</b><br>显示/隐藏模拟预览与直方图。",
+  previewMode: "<b>预览模式</b><br>切换预览的模拟方式：增益示意 / 亮度余量 / 热力图 / 真 HDR 原生渲染。",
+  gainScale: "<b>增益图分辨率</b><br>全分辨率：小细节最好、文件较大；半分辨率：文件更小，但细小结构的 HDR 效果会弱一些。",
+  exportQuality: "<b>JPEG 质量</b><br>底图重编码时的 JPEG 质量。仅在加水印/整体曝光/PNG 输入时生效；直通模式质量由原图决定。",
+  wmFontSize: "<b>水印字号</b><br>按画面短边的百分比计算；越大越显眼。",
+  wmMargin: "<b>水印边距</b><br>水印到画面边缘的距离（按短边百分比）。",
+  wmOpacity: "<b>水印不透明度</b><br>越低越透明。水印不会参与 HDR 提亮。",
+  wmLogoScale: "<b>Logo 缩放</b><br>Logo 宽度占画面短边的百分比。",
+  wmText: "<b>水印文字</b><br>显示在画面上的文字内容。",
+  wmColor: "<b>水印颜色</b><br>文字水印的颜色；水印不会参与 HDR 提亮。",
+};
+
+function showTip(html, x, y) {
+  if (!els.tip) return;
+  els.tip.innerHTML = html;
+  els.tip.classList.remove("hidden");
+  moveTip(x, y);
+}
+function moveTip(x, y) {
+  if (!els.tip) return;
+  const r = els.tip.getBoundingClientRect();
+  let left = x + 14;
+  let top = y + 16;
+  if (left + r.width > window.innerWidth - 8) left = x - r.width - 14;
+  if (top + r.height > window.innerHeight - 8) top = y - r.height - 14;
+  els.tip.style.left = Math.max(8, left) + "px";
+  els.tip.style.top = Math.max(8, top) + "px";
+}
+function hideTip() {
+  if (els.tip) els.tip.classList.add("hidden");
+}
+
+function bindTooltips() {
+  Object.entries(PARAM_TIPS).forEach(([id, tip]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const box = el.closest(".ctl") || el.closest(".field") || el.closest("label") || el;
+    box.dataset.tip = tip;
+  });
+  document.addEventListener("mousemove", (e) => {
+    const t = e.target && e.target.closest ? e.target.closest("[data-tip]") : null;
+    if (t) {
+      showTip(t.getAttribute("data-tip"), e.clientX, e.clientY);
+    } else if (!state.histHover) {
+      hideTip();
+    }
+  });
+  document.addEventListener("mouseleave", hideTip);
+
+  // 直方图：悬停显示坐标/含义，替代直接画文字
+  if (els.hist) {
+    els.hist.addEventListener("mousemove", (e) => {
+      const L = state.histLayout;
+      if (!L) return;
+      state.histHover = true;
+      const rect = els.hist.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const ch = L.chans || {};
+      let html = "";
+      if (Math.abs(x - L.whiteX) <= 3) {
+        html = "<b>SDR 白点</b><br>0 EV（普通 SDR 白）";
+      } else if (x < L.whiteX) {
+        const t = clamp((x - L.x0) / L.sdrW, 0, 1);
+        const bin = Math.round(t * 255);
+        let total = 0;
+        if (ch.lum) for (let i = 0; i < ch.lum.length; i++) total += ch.lum[i];
+        const pct = ch.lum && total ? (ch.lum[bin] / total) * 100 : 0;
+        html = `<b>SDR 影调</b><br>亮度 ${bin}/255 · 约占 ${pct.toFixed(2)}% 的像素`;
+      } else if (L.hdrW > 1) {
+        const t = clamp((x - L.whiteX) / L.hdrW, 0, 1);
+        const stops = t * L.hdrStops;
+        let total = 0;
+        for (let i = 0; i < L.hdrHist.length; i++) total += L.hdrHist[i];
+        const bin = Math.min(L.hdrHist.length - 1, Math.floor(t * (L.hdrHist.length - 1)));
+        const pct = total ? (L.hdrHist[bin] / total) * 100 : 0;
+        html = `<b>HDR 提亮区</b><br>约 +${stops.toFixed(2)} 档 · 约占 ${pct.toFixed(2)}% 的像素`;
+      }
+      if (html) showTip(html, e.clientX, e.clientY);
+    });
+    els.hist.addEventListener("mouseleave", () => {
+      state.histHover = false;
+      hideTip();
+    });
+  }
+}
+
 function bindUi() {
   if (els.resultClose) els.resultClose.addEventListener("click", () => els.result.classList.add("hidden"));
   els.drop.addEventListener("click", () => els.file.click());
@@ -2315,7 +2509,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.10",
+  version: "0.11",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
@@ -2349,6 +2543,7 @@ window.__hdrApp = {
 };
 
 bindUi();
+bindTooltips();
 if (state.hdrHigh) els.previewMode.value = "truehdr";
 setPreviewModeUi();
 updateParamLabels();
