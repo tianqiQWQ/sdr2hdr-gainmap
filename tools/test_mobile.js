@@ -47,6 +47,35 @@ const SHOTS = path.join(ROOT, "tests");
   if (!layout.dropHidden) errors.push("drop zone should be hidden after load on mobile");
   await page.screenshot({ path: path.join(SHOTS, "ui_v12_mobile_edit.png") });
 
+  // 按住画面 → 显示 SDR，松开恢复
+  await page.evaluate(() => {
+    const el = document.getElementById("figHdr");
+    el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", clientX: 100, clientY: 300 }));
+  });
+  await new Promise((r) => setTimeout(r, 350));
+  const pressOn = await page.evaluate(() => !document.getElementById("cvPressSdr").classList.contains("hidden"));
+  console.log("press shows SDR:", pressOn);
+  if (!pressOn) errors.push("press-to-SDR overlay not shown");
+  await page.screenshot({ path: path.join(SHOTS, "ui_v13_press_sdr.png") });
+  await page.evaluate(() => document.getElementById("figHdr").dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch" })));
+  await new Promise((r) => setTimeout(r, 300));
+  const pressOff = await page.evaluate(() => document.getElementById("cvPressSdr").classList.contains("hidden"));
+  console.log("release hides SDR:", pressOff);
+  if (!pressOff) errors.push("press-to-SDR overlay not hidden");
+
+  // 增益图灰度 chip
+  await page.evaluate(() => [...document.querySelectorAll("#mChips .m-chip")].find((b) => b.dataset.param === "gainmap").click());
+  await new Promise((r) => setTimeout(r, 700));
+  const gm = await page.evaluate(() => ({
+    mode: document.getElementById("previewMode").value,
+    active: [...document.querySelectorAll("#mChips .m-chip")].find((b) => b.dataset.param === "gainmap").classList.contains("on"),
+  }));
+  console.log("mobile gainmap:", JSON.stringify(gm));
+  if (gm.mode !== "gainmap" || !gm.active) errors.push("mobile gain map toggle failed");
+  await page.screenshot({ path: path.join(SHOTS, "ui_v13_mobile_gainmap.png") });
+  await page.evaluate(() => [...document.querySelectorAll("#mChips .m-chip")].find((b) => b.dataset.param === "gainmap").click());
+  await new Promise((r) => setTimeout(r, 500));
+
   // 点“强度” chip → 展开滑块，调整后同步到桌面隐藏控件
   await page.evaluate(() => [...document.querySelectorAll("#mChips .m-chip")].find((b) => b.dataset.param === "strength").click());
   await new Promise((r) => setTimeout(r, 300));

@@ -116,6 +116,21 @@ const SHOTS = path.join(ROOT, "tests");
   await page.waitForFunction('document.getElementById("hdrImg").src.indexOf("blob:") === 0 && document.getElementById("hdrImg").naturalWidth > 0', { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 500));
   await shot("ui_v10_truehdr.png");
+  // 增益图灰度预览
+  await page.select("#previewMode", "gainmap");
+  await new Promise((r) => setTimeout(r, 700));
+  const gmCheck = await page.evaluate(() => {
+    const c = document.getElementById("cvHdr");
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    let gray = true;
+    for (let i = 0; i < d.length; i += 4 * 991) {
+      if (Math.max(Math.abs(d[i] - d[i + 1]), Math.abs(d[i + 1] - d[i + 2]), Math.abs(d[i] - d[i + 2])) > 2) { gray = false; break; }
+    }
+    return { gray, caption: document.getElementById("captionHdr").textContent.slice(0, 30) };
+  });
+  console.log("gainmap preview:", JSON.stringify(gmCheck));
+  if (!gmCheck.gray) errors.push("gain map preview is not grayscale");
+  await shot("ui_v13_gainmap_preview.png");
   await page.select("#previewMode", "gain");
   await new Promise((r) => setTimeout(r, 500));
 

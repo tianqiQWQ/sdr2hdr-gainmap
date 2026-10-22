@@ -8,6 +8,7 @@
     "test:encode": "node tools/test_encode.js",
     "test:ui": "node tools/test_ui.js tests/input_synthetic_12mp.jpg",
     "test:mobile": "node tools/test_mobile.js tests/input_synthetic_12mp.jpg",
+    "test:load": "node tools/test_load_errors.js",
     "check": "node --check tools/test_encode.js && node --check tools/test_ui.js && python3 -m py_compile tools/validate_output.py tools/make_test_images.py && test -f index.html && grep -q \"__hdrApp\" index.html"
   },
   "devDependencies": {

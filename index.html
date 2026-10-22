@@ -92,6 +92,13 @@
   figure canvas { display: block; width: 100%; height: auto; max-height: 74vh; object-fit: contain; background: #000; }
   figcaption { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
   figure img { display: block; width: 100%; height: auto; background: #000; }
+  #figHdr { position: relative; }
+  .press-sdr { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 5; }
+  .press-hint {
+    display: none; position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+    z-index: 6; background: rgba(0, 0, 0, .5); color: #dbe4f0; font-size: 11px;
+    padding: 4px 9px; border-radius: 10px; pointer-events: none; white-space: nowrap;
+  }
   .hdr-link { padding: 4px 12px 10px; }
   .hdr-link a { color: var(--accent); font-size: 12px; text-decoration: none; }
   .hdr-link a:hover { text-decoration: underline; }
@@ -214,6 +221,7 @@
     .drop.compact { margin-bottom: 6px; }
     body.loaded .drop { display: none !important; }
     #figHdr figcaption, #figHdr .fig-hint { display: none; }
+    .press-hint { display: block; }
   }
 
   /* ===== 底部导航（编辑 / 成品预览 / 导出） ===== */
@@ -295,6 +303,8 @@
       <figure id="figHdr">
         <canvas id="cvHdr"></canvas>
         <img id="hdrImg" class="hidden" alt="真 HDR 预览">
+        <canvas id="cvPressSdr" class="press-sdr hidden"></canvas>
+        <div class="press-hint">按住画面看 SDR · 点按看成品预览</div>
         <figcaption id="captionHdr">HDR 增益示意</figcaption>
         <div class="hdr-link hidden" id="hdrLinkWrap">
           <a id="hdrLink" href="#" target="_blank" rel="noopener">在新标签打开真 HDR 预览（原生渲染）</a>
@@ -320,6 +330,7 @@
             <option value="gain" selected>增益示意（不压暗）</option>
             <option value="headroom">亮度余量（压暗）</option>
             <option value="heatmap">增益热力图</option>
+            <option value="gainmap">增益图（灰度）</option>
             <option value="truehdr">真 HDR 预览（原生渲染）</option>
           </select>
         </label>
@@ -1142,6 +1153,13 @@ function renderPreview() {
       o[i] = tmpCol[0]; o[i + 1] = tmpCol[1]; o[i + 2] = tmpCol[2]; o[i + 3] = 255;
       continue;
     }
+    if (mode === "gainmap") {
+      // 增益图灰度预览：越白 = HDR 屏上提亮越多；黑色 = 不变（增益图只会提亮，没有变暗区域）
+      const gvShow = Math.pow(clamp(gv, 0, 1), 0.85);
+      const g8 = Math.round(gvShow * 255);
+      o[i] = g8; o[i + 1] = g8; o[i + 2] = g8; o[i + 3] = 255;
+      continue;
+    }
     const lr = srgbToLinear(r), lg = srgbToLinear(g), lb = srgbToLinear(b);
     let or, og, ob;
     if (mode === "headroom") {
@@ -1361,6 +1379,9 @@ const state = {
   histLayout: null,
   histHover: false,
   mobileParam: null,
+  pressSdrTimer: 0,
+  pressSdrActive: false,
+  pressSdrUsed: false,
 };
 
 const els = {
@@ -1378,6 +1399,7 @@ const els = {
   histCaption: document.getElementById("histCaption"),
   cvSdr: document.getElementById("cvSdr"),
   cvHdr: document.getElementById("cvHdr"),
+  cvPressSdr: document.getElementById("cvPressSdr"),
   hdrImg: document.getElementById("hdrImg"),
   hdrLink: document.getElementById("hdrLink"),
   hdrLinkWrap: document.getElementById("hdrLinkWrap"),
@@ -1619,6 +1641,8 @@ function updateHdrCaption() {
   const peak = Math.pow(2, Math.max(0.001, M));
   if (mode === "truehdr") {
     els.captionHdr.textContent = `真 HDR 预览 —— 由浏览器原生渲染 gain map（本机 HDR：${hdrSupportText()}）。若这里和左侧 SDR 看起来一样，说明当前浏览器没有启用 HDR 图片渲染：macOS 上请用 Safari 打开本页，或直接看导出的 JPG。最终质量/水印请在「成品预览」或导出文件里确认。`;
+  } else if (mode === "gainmap") {
+    els.captionHdr.textContent = "增益图灰度预览 —— 越白 = HDR 屏上提亮越多，黑色 = 不变（增益图只提亮，不会让画面变暗）；这是增益分布，不是真实画面。";
   } else if (mode === "heatmap") {
     els.captionHdr.textContent = "增益热力图 —— 颜色越亮 = HDR 屏上提亮越多（黑色≈不变）；这是增益可视化，不是真实画面。";
   } else if (mode === "headroom") {
@@ -1708,16 +1732,37 @@ function flattenOnWhite(source) {
   return c;
 }
 
-function showLoadError(info) {
+function showLoadBanner(html) {
   if (!els.loadError) return;
   if (els.result) els.result.classList.add("hidden");
-  const reasons = info.reasons.length ? info.reasons.join("；") : "检测到 HDR 增益图元数据";
-  els.loadError.innerHTML =
-    "<b>⚠ 上传的图片已经包含 HDR 增益图（gain map），本工具不会再次处理它。</b>" +
-    "<div class=\"sub\">检测结果：" + reasons + "</div>" +
-    "<div class=\"sub\">请上传普通的 SDR 原图（Lightroom / 相机导出的普通 JPG，或 PNG）。" +
-    "对已带增益图的 HDR 图片重复处理，会二次压缩并丢失原始 HDR 数据。</div>";
+  els.loadError.innerHTML = html +
+    "<div class=\"sub\" style=\"margin-top:10px\"><button class=\"secondary sm le-close\" type=\"button\">关闭提示</button></div>";
   els.loadError.classList.remove("hidden");
+  try { els.loadError.scrollIntoView({ block: "nearest" }); } catch (e) { /* ignore */ }
+}
+
+function showHdrRejected(info) {
+  const reasons = info.reasons.length ? info.reasons.join("；") : "检测到 HDR 增益图元数据";
+  showLoadBanner(
+    "<b>⚠ 上传的图片已经包含 HDR 增益图（gain map），本工具不会再次处理它。</b>" +
+    "<div class=\"sub\">检测结果：" + escapeHtml(reasons) + "</div>" +
+    "<div class=\"sub\">请上传普通的 SDR 原图（Lightroom / 相机导出的普通 JPG，或 PNG）。" +
+    "对已带增益图的 HDR 图片重复处理，会二次压缩并丢失原始 HDR 数据。</div>"
+  );
+  setStatus("已拒绝：输入图片已包含 HDR 增益图（请改用 SDR 原图）", true);
+}
+
+function showLoadFailure(title, detail) {
+  showLoadBanner(
+    "<b>⚠ " + escapeHtml(title || "无法读取该文件") + "</b>" +
+    (detail ? "<div class=\"sub\">原因：" + escapeHtml(detail) + "</div>" : "") +
+    "<div class=\"sub\">请换一张 JPG / PNG 图片，或在 Lightroom / 相机软件里重新导出后再试。</div>"
+  );
+  setStatus(title || "导入失败", true);
+}
+
+function showLoadWarning(text) {
+  showLoadBanner("<b>⚠ " + escapeHtml(text) + "</b>");
 }
 
 function hideLoadError() {
@@ -1725,13 +1770,23 @@ function hideLoadError() {
 }
 
 async function loadFile(file) {
+  try {
+    await loadFileCore(file);
+  } catch (e) {
+    console.error("导入失败:", e);
+    showLoadFailure("读取文件失败", (e && e.message) || String(e));
+  }
+}
+
+async function loadFileCore(file) {
   if (!file) return;
   const isJpeg = /jpe?g$/i.test(file.name) || file.type === "image/jpeg";
   const isPng = /\.png$/i.test(file.name) || file.type === "image/png";
   if (!isJpeg && !isPng) {
-    alert("目前支持 JPG / PNG 文件。");
+    showLoadFailure("不支持的文件格式", "目前支持 JPG / PNG 文件（其他格式请先导出为 JPG 或 PNG）。");
     return;
   }
+  hideLoadError();
   if (els.result) els.result.classList.add("hidden");
   setStatus("正在读取文件…");
   const rawBytes = new Uint8Array(await file.arrayBuffer());
@@ -1739,26 +1794,44 @@ async function loadFile(file) {
   if (!inputIsPng) {
     const hdrCheck = detectExistingHdr(rawBytes);
     if (hdrCheck.isHdr) {
-      showLoadError(hdrCheck);
-      setStatus("已拒绝：输入图片已包含 HDR 增益图（请改用 SDR 原图）", true);
+      showHdrRejected(hdrCheck);
       return;
     }
   }
-  hideLoadError();
   let bytes = rawBytes;
   let stripped = { mpf: 0, xmp: 0 };
   let info = null;
+  let repairedEoi = false;
   if (!inputIsPng) {
     const stripRes = stripStaleHdrMetadata(rawBytes);
     bytes = stripRes.bytes;
     stripped = stripRes.removed;
     try { info = inspectOriginalJpeg(bytes); } catch (e) { info = null; }
-    if (!hasJpegEoi(bytes)) { setStatus("文件不完整（缺少 JPEG 结束标记），请重新导出", true); return; }
+    if (!hasJpegEoi(bytes)) {
+      // 常见于网页保存/传输中断的 JPG：缺少结束标记。先尝试补全再解码，能解码就继续并提示。
+      const repaired = concatBytes(bytes, new Uint8Array([0xFF, 0xD9]));
+      let ok = false;
+      try {
+        const probe = await createImageBitmap(new Blob([repaired], { type: "image/jpeg" }));
+        ok = true;
+        probe.close && probe.close();
+      } catch (e) {
+        ok = false;
+      }
+      if (!ok) {
+        showLoadFailure("文件不完整（缺少 JPEG 结束标记），无法解码", "文件可能下载/传输中断，图片数据不完整。");
+        return;
+      }
+      bytes = repaired;
+      repairedEoi = true;
+      try { info = inspectOriginalJpeg(bytes); } catch (e) { info = null; }
+    }
   }
 
   let bitmap;
-  try { bitmap = await createImageBitmap(file); } catch (e) {
-    setStatus("无法解码该文件（" + (inputIsPng ? "PNG" : "JPG") + "）：" + e.message, true); return;
+  try { bitmap = await createImageBitmap(new Blob([bytes], { type: inputIsPng ? "image/png" : "image/jpeg" })); } catch (e) {
+    showLoadFailure("无法解码该文件（" + (inputIsPng ? "PNG" : "JPG") + "）", e.message);
+    return;
   }
   if (inputIsPng) bitmap = flattenOnWhite(bitmap);
 
@@ -1769,6 +1842,7 @@ async function loadFile(file) {
   state.previewStats = null;
   state.orientation = (info && info.orientation) ? info.orientation : 1;
   state.sdrBaseKey = null;
+  hidePressSdr();
 
   els.editor.classList.remove("hidden");
   els.result.classList.add("hidden");
@@ -1813,8 +1887,12 @@ async function loadFile(file) {
   }
   if (info && info.hasXmp) warns.push("原图还含其它 XMP 段，导出时会保留它并追加 HDR 元数据；个别解析器可能优先读旧 XMP");
   if (info && info.orientation && info.orientation !== 1) warns.push("照片带方向标记（Orientation=" + info.orientation + "），增益图可能与显示方向错位；建议在 LR 导出时应用方向");
+  if (repairedEoi) warns.push("文件缺少 JPEG 结束标记，已自动补全（图片可能不完整，建议重新导出）");
   els.note.className = "note" + (warns.length ? " warn" : "");
   els.note.textContent = warns.length ? "⚠ " + warns.join("；") : "提示：导出的文件在不支持 HDR 的显示环境里和原图看起来一样，这是正常现象；只有 HDR 屏 + 支持的浏览器/相册才会显示更亮的高光。";
+  if (repairedEoi) {
+    showLoadWarning("文件缺少 JPEG 结束标记，已自动补全并导入（图片可能不完整，建议重新导出）");
+  }
   setStatus("就绪 · " + file.name);
 }
 
@@ -2629,6 +2707,26 @@ function bindTooltips() {
 }
 
 /* ============================================================
+ * 按住画面看 SDR（触屏/手写笔）
+ * ============================================================ */
+function showPressSdr() {
+  if (!els.cvPressSdr || !state.bitmap) return;
+  const src = els.cvSdr;
+  if (!src.width) return;
+  els.cvPressSdr.width = src.width;
+  els.cvPressSdr.height = src.height;
+  const ctx = els.cvPressSdr.getContext("2d");
+  ctx.clearRect(0, 0, src.width, src.height);
+  ctx.drawImage(src, 0, 0);
+  els.cvPressSdr.classList.remove("hidden");
+  state.pressSdrActive = true;
+}
+function hidePressSdr() {
+  state.pressSdrActive = false;
+  if (els.cvPressSdr) els.cvPressSdr.classList.add("hidden");
+}
+
+/* ============================================================
  * 手机端参数条
  * ============================================================ */
 const MOBILE_PARAM_DEFS = [
@@ -2669,6 +2767,13 @@ function ensureMobileChips() {
     b.addEventListener("click", () => toggleMobileSheet(d.id));
     els.mChips.appendChild(b);
   });
+  const gm = document.createElement("button");
+  gm.className = "m-chip";
+  gm.dataset.param = "gainmap";
+  gm.textContent = "增益图";
+  gm.addEventListener("click", () => toggleMobileGainmap());
+  els.mChips.appendChild(gm);
+
   const adv = document.createElement("button");
   adv.className = "m-chip";
   adv.dataset.param = "advanced";
@@ -2685,8 +2790,21 @@ function updateMobileChips() {
     if (b) b.textContent = d.chip + " " + d.fmt(p);
   });
   els.mChips.querySelectorAll(".m-chip").forEach((b) => {
-    b.classList.toggle("on", b.dataset.param === state.mobileParam);
+    const p = b.dataset.param;
+    const on = p === "gainmap" ? els.previewMode.value === "gainmap" : p === state.mobileParam;
+    b.classList.toggle("on", on);
   });
+}
+
+function toggleMobileGainmap() {
+  if (!state.bitmap) return;
+  if (!els.showAssist.checked) {
+    els.showAssist.checked = true;
+    els.showAssist.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  els.previewMode.value = els.previewMode.value === "gainmap" ? "gain" : "gainmap";
+  els.previewMode.dispatchEvent(new Event("change", { bubbles: true }));
+  updateMobileChips();
 }
 
 function closeMobileSheet() {
@@ -2775,6 +2893,9 @@ function toggleMobileSheet(paramId) {
 
 function bindUi() {
   if (els.resultClose) els.resultClose.addEventListener("click", () => els.result.classList.add("hidden"));
+  if (els.loadError) els.loadError.addEventListener("click", (e) => {
+    if (e.target && e.target.closest && e.target.closest(".le-close")) hideLoadError();
+  });
   els.drop.addEventListener("click", () => els.file.click());
   els.drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") els.file.click(); });
   els.file.addEventListener("change", () => loadFile(els.file.files[0]));
@@ -2823,8 +2944,30 @@ function bindUi() {
   });
   if (els.figHdr) els.figHdr.addEventListener("click", (e) => {
     if (e.target && e.target.closest && e.target.closest("a")) return;
+    if (state.pressSdrUsed) { state.pressSdrUsed = false; return; }
     openBigView();
   });
+  if (els.figHdr) {
+    els.figHdr.addEventListener("contextmenu", (e) => {
+      if (e.pointerType !== "mouse") e.preventDefault();
+    });
+    els.figHdr.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse") return;
+      clearTimeout(state.pressSdrTimer);
+      state.pressSdrUsed = false;
+      state.pressSdrTimer = setTimeout(() => {
+        state.pressSdrUsed = true;
+        showPressSdr();
+      }, 220);
+    });
+    const endPress = () => {
+      clearTimeout(state.pressSdrTimer);
+      if (state.pressSdrActive) { hidePressSdr(); state.pressSdrUsed = true; }
+    };
+    els.figHdr.addEventListener("pointerup", endPress);
+    els.figHdr.addEventListener("pointercancel", endPress);
+    els.figHdr.addEventListener("pointerleave", endPress);
+  }
   if (els.bigClose) els.bigClose.addEventListener("click", closeBigView);
   if (els.bigFit) els.bigFit.addEventListener("click", () => els.bigStage.classList.remove("actual"));
   if (els.bigActual) els.bigActual.addEventListener("click", () => els.bigStage.classList.add("actual"));
