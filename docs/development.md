@@ -71,6 +71,9 @@ node tools/test_ui.js tests/input_synthetic_12mp.jpg
 
 # 非 macOS 指定浏览器路径
 CHROME_PATH=/usr/bin/google-chrome node tools/test_ui.js tests/input_synthetic_12mp.jpg
+
+# 移动端界面回归（390×844：单图 + 参数条 + 导出）
+node tools/test_mobile.js tests/input_synthetic_12mp.jpg
 ```
 
 截图会写到 `tests/` 下（已在 `.gitignore` 中忽略）。脚本覆盖底部导航、全屏成品预览、独立导出界面（直通质量禁用 / 水印触发重编码）、水印导出，最后还会把导出的 HDR 图再次上传，验证"已含增益图输入会被拒绝"的回归。

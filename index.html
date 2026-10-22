@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDR → HDR 转换器（本地网页版）v0.11</title>
+<title>SDR → HDR 转换器（本地网页版）v0.12</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -178,6 +178,44 @@
   }
   .result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .result-head .note { margin: 0; flex: 1; }
+  /* ===== 手机端：仅 HDR 图 + 底部参数条 ===== */
+  .mobile-params { display: none; flex: none; background: var(--panel); border-top: 1px solid var(--line); padding: 6px 10px 2px; }
+  .m-sheet { background: #12161d; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 10px; margin-bottom: 6px; max-height: 42vh; overflow: auto; }
+  .m-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+  .m-head b { color: var(--fg); font-size: 12.5px; }
+  .m-close { background: none; border: 0; color: var(--muted); font-size: 12px; padding: 2px 4px; cursor: pointer; }
+  .m-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .m-row label { flex: 0 0 74px; color: var(--muted); font-size: 12px; }
+  .m-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+  .m-row .m-val { flex: 0 0 62px; text-align: right; color: var(--fg); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .m-row select { background: #232a36; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font-size: 12px; }
+  .m-chips { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 6px; scrollbar-width: none; }
+  .m-chips::-webkit-scrollbar { display: none; }
+  .m-chip { flex: none; background: #232a36; color: var(--fg); border: 1px solid var(--line); border-radius: 16px; padding: 7px 12px; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+  .m-chip.on { border-color: var(--accent); color: var(--accent); background: #1b2537; }
+  @media (max-width: 760px) {
+    html, body { height: auto; }
+    body { display: block; overflow: auto; min-height: 100dvh; }
+    header { padding: 10px 14px 8px; }
+    header p { display: none; }
+    .ver-note { margin-bottom: 0; }
+    main { padding: 8px 10px 190px; }
+    .app-shell { grid-template-columns: 1fr; height: auto; }
+    .viewer { height: auto; overflow: visible; }
+    .previews { grid-template-columns: 1fr; padding: 6px; min-height: 0; }
+    .previews #figSdr { display: none; }
+    .side-panel { display: none; }
+    .mobile-params { display: block; position: fixed; left: 0; right: 0; bottom: 58px; z-index: 59; }
+    .bottom-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+                  padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px)); gap: 6px; }
+    .bb-btn { padding: 8px 12px; font-size: 12.5px; }
+    .bb-status { display: none; }
+    .bb-center { justify-content: center; }
+    .drop.compact { margin-bottom: 6px; }
+    body.loaded .drop { display: none !important; }
+    #figHdr figcaption, #figHdr .fig-hint { display: none; }
+  }
+
   /* ===== 底部导航（编辑 / 成品预览 / 导出） ===== */
   .bottom-bar {
     flex: none; display: flex; align-items: center; gap: 12px;
@@ -233,8 +271,8 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.11 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.11 更新：直方图重做为平滑 RGB/亮度曲线并放大铺满；悬停直方图或参数可查看具体含义</div>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.12 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.12 更新：手机端改为单张 HDR 图 + 底部参数条，点选参数才展开滑块；桌面布局不变</div>
   <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
      <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
 </header>
@@ -261,7 +299,7 @@
         <div class="hdr-link hidden" id="hdrLinkWrap">
           <a id="hdrLink" href="#" target="_blank" rel="noopener">在新标签打开真 HDR 预览（原生渲染）</a>
         </div>
-        <div class="fig-hint">点击画面 → 大图 HDR 调试（按当前参数与最终导出分辨率实时生成）</div>
+        <div class="fig-hint">点击画面 → 成品预览（按当前参数与最终导出分辨率生成）</div>
       </figure>
     </div>
     </section>
@@ -398,6 +436,11 @@
     </ol>
   </section>
 </main>
+
+<div id="mobileParams" class="mobile-params hidden">
+  <div id="mSheet" class="m-sheet hidden"></div>
+  <div id="mChips" class="m-chips"></div>
+</div>
 
 <nav id="bottomBar" class="bottom-bar hidden">
   <div class="bb-left">
@@ -1301,6 +1344,7 @@ const state = {
   exportOpts: null,
   histLayout: null,
   histHover: false,
+  mobileParam: null,
 };
 
 const els = {
@@ -1364,6 +1408,9 @@ const els = {
   bigClose: document.getElementById("bigClose"),
 
   tip: document.getElementById("tip"),
+  mobileParams: document.getElementById("mobileParams"),
+  mSheet: document.getElementById("mSheet"),
+  mChips: document.getElementById("mChips"),
 
   bottomBar: document.getElementById("bottomBar"),
   editTab: document.getElementById("editTab"),
@@ -1529,6 +1576,7 @@ function updateParamLabels() {
     : "0（不改变底图）";
   els.compressVal.textContent = `${p.highlightCompress}%`;
   updateSdrCaption();
+  updateMobileChips();
 }
 
 function updateSdrCaption() {
@@ -1710,7 +1758,12 @@ async function loadFile(file) {
   els.exportBtn.disabled = false;
   els.resetBtn.disabled = false;
   els.previewBtn.disabled = false;
+  document.body.classList.add("loaded");
   els.bottomBar.classList.remove("hidden");
+  els.mobileParams.classList.remove("hidden");
+  ensureMobileChips();
+  updateMobileChips();
+  closeMobileSheet();
   state.screen = "edit";
   els.exportScreen.classList.add("hidden");
   const baseName = file.name.replace(/\.[^.]+$/, "");
@@ -2165,6 +2218,8 @@ function showScreen(name) {
   els.editor.classList.toggle("hidden", !(edit && state.bitmap));
   els.exportScreen.classList.toggle("hidden", name !== "export");
   els.bottomBar.classList.toggle("hidden", !edit || !state.bitmap);
+  els.mobileParams.classList.toggle("hidden", !edit || !state.bitmap);
+  if (!edit && state.mobileParam) closeMobileSheet();
   if (els.drop) els.drop.classList.toggle("hidden", name !== "edit");
   if (name === "export") {
     updateWatermarkUi();
@@ -2400,6 +2455,151 @@ function bindTooltips() {
   }
 }
 
+/* ============================================================
+ * 手机端参数条
+ * ============================================================ */
+const MOBILE_PARAM_DEFS = [
+  { id: "strength", label: "HDR 强度", chip: "强度", fmt: (p) => String(Math.round(p.strength)) },
+  { id: "knee", label: "提亮起点", chip: "起点", fmt: (p) => String(Math.round(p.knee)) },
+  { id: "detail", label: "细节增强", chip: "细节", fmt: (p) => p.detail + "%" },
+  { id: "color", label: "彩色高光", chip: "彩色", fmt: (p) => p.color + "%" },
+  { id: "exposureEv", label: "整体曝光", chip: "曝光", fmt: (p) => (p.exposureEv > 0.001 ? "+" + p.exposureEv.toFixed(1) : "0") },
+];
+const MOBILE_VALUE_FORMAT = {
+  strength: (v) => String(Math.round(Number(v))),
+  knee: (v) => String(Math.round(Number(v))),
+  detail: (v) => Number(v) + "%",
+  color: (v) => Number(v) + "%",
+  exposureEv: (v) => (Number(v) > 0.001 ? "+" + Number(v).toFixed(1) : "0"),
+  curvePow: (v) => Number(v).toFixed(2),
+  detailRadius: (v) => Number(v) + "px",
+  clarity: (v) => Number(v) + "%",
+  highlightCompress: (v) => Number(v) + "%",
+  portraitStrength: (v) => Number(v) + "%",
+};
+const MOBILE_ADVANCED = [
+  { id: "curvePow", label: "过渡曲线", fmt: (v) => Number(v).toFixed(2) },
+  { id: "detailRadius", label: "细节尺度", fmt: (v) => v + "px" },
+  { id: "clarity", label: "通透感", fmt: (v) => v + "%" },
+  { id: "highlightCompress", label: "高光柔化", fmt: (v) => v + "%" },
+  { id: "portraitStrength", label: "人像保护", fmt: (v) => v + "%" },
+];
+
+function ensureMobileChips() {
+  if (!els.mChips || els.mChips.dataset.built) return;
+  els.mChips.dataset.built = "1";
+  MOBILE_PARAM_DEFS.forEach((d) => {
+    const b = document.createElement("button");
+    b.className = "m-chip";
+    b.dataset.param = d.id;
+    b.textContent = d.chip;
+    b.addEventListener("click", () => toggleMobileSheet(d.id));
+    els.mChips.appendChild(b);
+  });
+  const adv = document.createElement("button");
+  adv.className = "m-chip";
+  adv.dataset.param = "advanced";
+  adv.textContent = "高级";
+  adv.addEventListener("click", () => toggleMobileSheet("advanced"));
+  els.mChips.appendChild(adv);
+}
+
+function updateMobileChips() {
+  if (!els.mChips || !els.mChips.dataset.built) return;
+  const p = readParams();
+  MOBILE_PARAM_DEFS.forEach((d) => {
+    const b = els.mChips.querySelector(`[data-param="${d.id}"]`);
+    if (b) b.textContent = d.chip + " " + d.fmt(p);
+  });
+  els.mChips.querySelectorAll(".m-chip").forEach((b) => {
+    b.classList.toggle("on", b.dataset.param === state.mobileParam);
+  });
+}
+
+function closeMobileSheet() {
+  state.mobileParam = null;
+  if (els.mSheet) {
+    els.mSheet.classList.add("hidden");
+    els.mSheet.innerHTML = "";
+  }
+  updateMobileChips();
+}
+
+function mobileRangeRow(desktopId, label, fmt) {
+  const src = document.getElementById(desktopId);
+  if (!src) return null;
+  const valueFmt = MOBILE_VALUE_FORMAT[desktopId] || ((v) => String(v));
+  const row = document.createElement("div");
+  row.className = "m-row";
+  const lab = document.createElement("label");
+  lab.textContent = label;
+  const inp = document.createElement("input");
+  inp.type = "range";
+  inp.min = src.min; inp.max = src.max; inp.step = src.step;
+  inp.value = src.value;
+  const val = document.createElement("span");
+  val.className = "m-val";
+  val.textContent = valueFmt(src.value);
+  inp.addEventListener("input", () => {
+    src.value = inp.value;
+    src.dispatchEvent(new Event("input", { bubbles: true }));
+    val.textContent = valueFmt(inp.value);
+    updateMobileChips();
+  });
+  row.appendChild(lab); row.appendChild(inp); row.appendChild(val);
+  return row;
+}
+
+function toggleMobileSheet(paramId) {
+  if (!els.mSheet) return;
+  if (state.mobileParam === paramId) { closeMobileSheet(); return; }
+  state.mobileParam = paramId;
+  els.mSheet.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "m-head";
+  const isAdv = paramId === "advanced";
+  const def = MOBILE_PARAM_DEFS.find((d) => d.id === paramId);
+  head.innerHTML = "<b>" + (isAdv ? "高级参数" : (def ? def.label : "参数")) + "</b>";
+  const close = document.createElement("button");
+  close.className = "m-close";
+  close.textContent = "收起 ✕";
+  close.addEventListener("click", closeMobileSheet);
+  head.appendChild(close);
+  els.mSheet.appendChild(head);
+
+  if (isAdv) {
+    MOBILE_ADVANCED.forEach((d) => {
+      const row = mobileRangeRow(d.id, d.label, d.fmt);
+      if (row) els.mSheet.appendChild(row);
+    });
+    const sizeRow = document.createElement("div");
+    sizeRow.className = "m-row";
+    sizeRow.innerHTML = '<label>增益图</label>';
+    const sel = document.createElement("select");
+    sel.innerHTML = '<option value="1">全分辨率</option><option value="0.5">半分辨率</option>';
+    sel.value = els.gainScale.value;
+    sel.addEventListener("change", () => {
+      els.gainScale.value = sel.value;
+      els.gainScale.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    sizeRow.appendChild(sel);
+    els.mSheet.appendChild(sizeRow);
+    const reset = document.createElement("button");
+    reset.className = "secondary sm";
+    reset.textContent = "恢复默认参数";
+    reset.addEventListener("click", () => {
+      els.resetParams.click();
+      updateMobileChips();
+    });
+    els.mSheet.appendChild(reset);
+  } else if (def) {
+    const row = mobileRangeRow(def.id, def.label, def.fmt);
+    if (row) els.mSheet.appendChild(row);
+  }
+  els.mSheet.classList.remove("hidden");
+  updateMobileChips();
+}
+
 function bindUi() {
   if (els.resultClose) els.resultClose.addEventListener("click", () => els.result.classList.add("hidden"));
   els.drop.addEventListener("click", () => els.file.click());
@@ -2495,7 +2695,10 @@ function bindUi() {
     if (els.wmLogoFile) els.wmLogoFile.value = "";
     els.editor.classList.add("hidden");
     els.exportScreen.classList.add("hidden");
+    document.body.classList.remove("loaded");
     els.bottomBar.classList.add("hidden");
+    els.mobileParams.classList.add("hidden");
+    closeMobileSheet();
     els.result.classList.add("hidden");
     els.file.value = "";
     state.screen = "edit";
@@ -2509,7 +2712,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.11",
+  version: "0.12",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
