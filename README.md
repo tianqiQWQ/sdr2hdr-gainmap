@@ -8,6 +8,7 @@
 - 输出为真实 Ultra HDR JPG（主图 + 增益图 + XMP/MPF 元数据），可在 Chrome / Edge / iOS 18+ / macOS 等支持设备上以 HDR 显示
 - JPG 输入时原始字节完整保留（EXIF/ICC 不动），只是追加增益图
 - 提供 HDR 参数：整体曝光、HDR 强度、提亮起点、细节增强、彩色高光、过渡曲线、细节尺度、通透感、人像保护、增益图分辨率
+- 界面参考 Lightroom：**左侧大图预览 + 右侧直方图/参数面板**，桌面端整屏工作区、参数栏独立滚动；窄屏自动切上下布局
 - 大图 HDR 调试：点击右侧画面进入近全屏视图，直接按"最终导出文件"的尺寸与参数原生渲染
 - 本机 HDR 能力检测（`dynamic-range` 媒体查询），支持"真 HDR 预览"
 
@@ -23,7 +24,7 @@ https://tianqiQWQ.github.io/sdr2hdr-gainmap/
 
 ## 截图
 
-| 主界面 | 大图 HDR 调试 |
+| Lightroom 风格主界面（右侧参数栏） | 大图 HDR 调试 |
 |---|---|
 | ![主界面](assets/screenshots/main.png) | ![大图调试](assets/screenshots/big-view.png) |
 

@@ -3,22 +3,68 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDR → HDR 转换器（本地网页版）v0.7</title>
+<title>SDR → HDR 转换器（本地网页版）v0.8</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
     --muted: #9aa3b2; --accent: #5aa9ff; --warn: #ffb454; --ok: #58d68d;
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0; background: var(--bg); color: var(--fg);
     font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
   }
-  header { padding: 22px 24px 14px; border-bottom: 1px solid var(--line); }
+  header { padding: 12px 20px 10px; border-bottom: 1px solid var(--line); flex: none; }
   h1 { font-size: 18px; margin: 0 0 6px; font-weight: 600; }
   header p { margin: 0; color: var(--muted); font-size: 13px; max-width: 920px; }
   .ver-note { color: #7f8a9b; font-size: 12px; margin: -2px 0 8px; }
-  main { padding: 20px 24px 60px; max-width: 1180px; margin: 0 auto; }
+  main { padding: 12px 20px 14px; max-width: none; width: 100%; margin: 0;
+         flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+  /* ===== Lightroom 风格：左侧大图 + 右侧参数栏 ===== */
+  #editor { flex: 1 1 auto; min-height: 0; }
+  .app-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 388px;
+    gap: 16px;
+    align-items: stretch;
+    height: 100%;
+  }
+  .viewer { min-width: 0; height: 100%; overflow: auto; scrollbar-width: thin; }
+  .side-panel {
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    padding-right: 4px;
+  }
+  .side-panel::-webkit-scrollbar { width: 8px; }
+  .side-panel::-webkit-scrollbar-thumb { background: #2f3644; border-radius: 4px; }
+  .drop { flex: none; margin-bottom: 12px; }
+  .side-panel .controls { margin-top: 12px; }
+  .side-panel .hist-fig { margin-top: 0; }
+  .side-title {
+    color: var(--muted); font-size: 11.5px; letter-spacing: .08em;
+    text-transform: uppercase; margin: 0 0 2px;
+  }
+  @media (max-width: 1180px) {
+    .app-shell { grid-template-columns: minmax(0, 1fr) 344px; }
+  }
+  @media (max-width: 900px) {
+    html, body { height: auto; }
+    body { display: block; overflow: auto; }
+    header { padding: 14px 16px 10px; }
+    main { display: block; padding: 12px 14px 40px; }
+    #editor { display: block; }
+    .app-shell { grid-template-columns: 1fr; height: auto; align-items: start; }
+    .viewer { height: auto; overflow: visible; }
+    .previews { min-height: 0; }
+    .side-panel { height: auto; max-height: none; overflow: visible; padding-right: 0; }
+    .side-panel .controls { margin-top: 14px; }
+    .side-panel .action-bar { position: static; margin: 14px 0 0; padding: 0; border: 0; }
+  }
   .drop {
     border: 2px dashed #3a4150; border-radius: 12px; padding: 38px 20px;
     text-align: center; cursor: pointer; transition: .15s; background: var(--panel);
@@ -26,20 +72,40 @@
   .drop.hover, .drop:focus { border-color: var(--accent); background: #1a2130; outline: none; }
   .drop strong { display: block; font-size: 15px; margin-bottom: 6px; }
   .drop span { color: var(--muted); font-size: 13px; }
-  .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+  .drop.compact { padding: 10px 16px; margin-bottom: 12px; }
+  .drop.compact strong { font-size: 13px; margin-bottom: 0; }
+  .drop.compact span { display: none; }
+  .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 0; background: #0b0d11;
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+    min-height: 100%; align-content: center; }
   .previews.single { grid-template-columns: 1fr; }
   .previews.single #figHdr { display: none; }
-  @media (max-width: 820px) { .previews { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) { .previews { grid-template-columns: 1fr; } }
   figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-  figure canvas { display: block; width: 100%; height: auto; background: #000; }
+  figure canvas { display: block; width: 100%; height: auto; max-height: 74vh; object-fit: contain; background: #000; }
   figcaption { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
   figure img { display: block; width: 100%; height: auto; background: #000; }
   .hdr-link { padding: 4px 12px 10px; }
   .hdr-link a { color: var(--accent); font-size: 12px; text-decoration: none; }
   .hdr-link a:hover { text-decoration: underline; }
   .hist-fig { margin-top: 14px; }
-  .hist-fig canvas { height: 156px; }
+  .hist-fig canvas { height: 132px; }
   .controls { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  /* 参数栏窄，滑块改为两行式（标签+数值一行，滑块独立一行） */
+  .side-panel .ctl-grid { grid-template-columns: 1fr; gap: 12px; margin-top: 10px; }
+  .side-panel .ctl { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "label val" "slider slider"; align-items: center; gap: 2px 10px; }
+  .side-panel .ctl label { grid-area: label; min-width: 0; }
+  .side-panel .ctl input[type=range] { grid-area: slider; width: 100%; }
+  .side-panel .ctl .val { grid-area: val; min-width: 0; text-align: right; }
+  @media (max-width: 900px) {
+    .side-panel .ctl-grid { grid-template-columns: 1fr 1fr; }
+    .side-panel .ctl { display: flex; flex-wrap: wrap; }
+    .side-panel .ctl label { min-width: 64px; }
+    .side-panel .ctl .val { min-width: 100px; text-align: left; }
+  }
+  @media (max-width: 600px) {
+    .side-panel .ctl-grid { grid-template-columns: 1fr; }
+  }
   .ctl-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .ctl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; margin-top: 12px; }
   @media (max-width: 820px) { .ctl-grid { grid-template-columns: 1fr; } }
@@ -55,6 +121,14 @@
   button:disabled { opacity: .45; cursor: default; }
   button.secondary { background: #2a3140; color: var(--fg); }
   details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .side-panel .ctl-row { gap: 10px; }
+  .side-panel .action-bar {
+    position: sticky; bottom: -14px; z-index: 3;
+    background: var(--panel); border-top: 1px solid var(--line);
+    margin: 14px -16px 0; padding: 10px 16px;
+  }
+  .big-dock .action-bar { position: static; margin: 14px 0 0; padding: 0; border: 0; }
+  .side-panel .ctl-row .chk, .side-panel .ctl-row .sel { font-size: 12.5px; }
   summary { cursor: pointer; color: var(--muted); font-size: 13px; user-select: none; }
   .meta { margin-top: 14px; color: var(--muted); font-size: 12.5px; }
   .meta b { color: var(--fg); font-weight: 600; }
@@ -82,8 +156,20 @@
   .big-stage.actual img { max-width: none; max-height: none; }
   .big-dock { max-height: 42vh; overflow: auto; border-top: 1px solid var(--line); background: var(--panel); }
   .big-dock .controls { margin: 0; border: 0; border-radius: 0; }
+  .big-dock .ctl-grid { grid-template-columns: 1fr 1fr !important; }
+  .big-dock .ctl { display: flex !important; flex-wrap: wrap; }
+  .big-dock .ctl label { min-width: 64px; }
+  .big-dock .ctl .val { min-width: 100px; text-align: left; }
   .big-dock .meta, .big-dock .note { display: none; }
   .big-dock .controls { padding: 10px 16px; }
+  #result {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    z-index: 900; width: min(720px, calc(100vw - 32px)); max-height: 52vh; overflow: auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; box-shadow: 0 16px 48px rgba(0, 0, 0, .55);
+  }
+  .result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .result-head .note { margin: 0; flex: 1; }
   .busy { opacity: .6; pointer-events: none; }
   ol.steps { margin: 10px 0 0; padding-left: 20px; color: var(--muted); font-size: 12.5px; }
   ol.steps li { margin: 3px 0; }
@@ -92,8 +178,8 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.7 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.7 更新：新增 PNG 输入（自动转 JPEG 底图；透明区域铺白、16-bit 降为 8-bit）</div>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.8 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.8 更新：界面改为 Lightroom 风格——右侧参数面板 + 左侧大图预览；窄屏自动切换为上下布局</div>
   <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
      <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
 </header>
@@ -105,6 +191,8 @@
   <input type="file" id="file" accept="image/jpeg,image/png" class="hidden">
 
   <section id="editor" class="hidden">
+    <div class="app-shell">
+    <section class="viewer">
     <div class="previews" id="previews">
       <figure id="figSdr">
         <canvas id="cvSdr"></canvas>
@@ -120,13 +208,17 @@
         <div class="fig-hint">点击画面 → 大图 HDR 调试（按当前参数与最终导出分辨率实时生成）</div>
       </figure>
     </div>
+    </section>
 
-    <figure class="hist-fig" id="histFig">
-      <canvas id="hist"></canvas>
-      <figcaption id="histCaption">SDR / HDR 直方图 —— 白点左侧为 SDR 影调，右侧为 HDR 提亮区（宽度按曝光档数比例）</figcaption>
-    </figure>
+    <aside class="side-panel" id="sidePanel">
+      <div class="side-title">直方图</div>
+      <figure class="hist-fig" id="histFig">
+        <canvas id="hist"></canvas>
+        <figcaption id="histCaption">SDR / HDR 直方图 —— 白点左侧为 SDR 影调，右侧为 HDR 提亮区（宽度按曝光档数比例）</figcaption>
+      </figure>
 
-    <div class="controls">
+      <div class="side-title" style="margin-top:14px">参数</div>
+      <div class="controls">
       <div class="ctl-row">
         <label class="chk"><input type="checkbox" id="showAssist" checked> 显示 HDR 辅助（预览 + 直方图）</label>
         <label class="sel">预览模式
@@ -170,7 +262,7 @@
         </div>
       </details>
 
-      <div class="ctl-row" style="margin-top:14px">
+      <div class="ctl-row action-bar">
         <button id="exportBtn" disabled>导出 HDR JPG</button>
         <button id="resetBtn" class="secondary" disabled>重新选择</button>
         <span class="val" id="status"></span>
@@ -179,11 +271,16 @@
       <div class="note" id="note">
         提示：导出的文件在不支持 HDR 的显示环境里和原图看起来一样，这是正常现象；只有 HDR 屏 + 支持的浏览器/相册才会显示更亮的高光。
       </div>
+      </div>
+    </aside>
     </div>
   </section>
 
   <section id="result" class="hidden">
-    <div class="note ok" id="resultText"></div>
+    <div class="result-head">
+      <div class="note ok" id="resultText"></div>
+      <button id="resultClose" class="secondary sm">关闭</button>
+    </div>
     <ol class="steps">
       <li>先把文件用 AirDrop / 文件 App / 数据线传到手机或 HDR 电脑上；</li>
       <li>iPhone/iPad：存到「照片」或直接在 Safari 打开（iOS 18+ 支持 gain map HDR JPG）；</li>
@@ -1000,6 +1097,7 @@ const els = {
   editor: document.getElementById("editor"),
   result: document.getElementById("result"),
   resultText: document.getElementById("resultText"),
+  resultClose: document.getElementById("resultClose"),
   previews: document.getElementById("previews"),
   figHdr: document.getElementById("figHdr"),
   histFig: document.getElementById("histFig"),
@@ -1333,6 +1431,11 @@ async function loadFile(file) {
 
   els.editor.classList.remove("hidden");
   els.result.classList.add("hidden");
+  if (els.drop) {
+    els.drop.classList.add("compact");
+    const dstrong = els.drop.querySelector("strong");
+    if (dstrong) dstrong.textContent = "拖入 / 点击选择另一张图片";
+  }
   els.exportBtn.disabled = false;
   els.resetBtn.disabled = false;
   els.exportBtn.textContent = "导出 HDR JPG";
@@ -1588,6 +1691,7 @@ function triggerDownload(blob, filename) {
  * 事件绑定
  * ============================================================ */
 function bindUi() {
+  if (els.resultClose) els.resultClose.addEventListener("click", () => els.result.classList.add("hidden"));
   els.drop.addEventListener("click", () => els.file.click());
   els.drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") els.file.click(); });
   els.file.addEventListener("change", () => loadFile(els.file.files[0]));
@@ -1660,7 +1764,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.7",
+  version: "0.8",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt) {
     let params;
