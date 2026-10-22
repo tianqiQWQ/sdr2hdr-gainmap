@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDR → HDR 转换器（本地网页版）v0.12</title>
+<title>SDR → HDR 转换器（本地网页版）v0.13</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -271,8 +271,8 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.12 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.12 更新：手机端改为单张 HDR 图 + 底部参数条，点选参数才展开滑块；桌面布局不变</div>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.13 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.13 更新：新增 SDR/HDR 对比拼图导出（真 HDR，可切换上下顺序/标签/中缝/尺寸，适合发小红书）</div>
   <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
      <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
 </header>
@@ -375,8 +375,24 @@
         <h3>输出</h3>
         <div class="field"><label>格式</label><select disabled><option>JPG（Ultra HDR）</option></select></div>
         <div class="field"><label for="filenamePrefix">文件名前缀</label><input type="text" id="filenamePrefix" placeholder="默认使用原图名"></div>
-        <div class="field"><label>输出模式</label><select id="outputMode" disabled><option value="single">单张 HDR</option></select></div>
-        <div class="hint" style="margin-left:96px;color:#7f8a9b;font-size:11.5px">自动追加 _HDR.jpg；SDR/HDR 对比拼图在后续版本加入</div>
+        <div class="field"><label for="outputMode">输出模式</label><select id="outputMode">
+          <option value="single" selected>单张 HDR</option>
+          <option value="compare">SDR / HDR 对比拼图</option>
+        </select></div>
+        <div class="hint" style="margin-left:96px;color:#7f8a9b;font-size:11.5px">单张输出 _HDR.jpg；对比拼图输出 _SDR-HDR对比.jpg</div>
+        <div id="compareFields" class="wm-group hidden">
+          <div class="field"><label for="compareOrder">拼图顺序</label><select id="compareOrder">
+            <option value="sdr-top" selected>SDR 在上 / HDR 在下</option>
+            <option value="hdr-top">HDR 在上 / SDR 在下</option>
+          </select></div>
+          <div class="field range"><label for="compareGap">中缝</label><input type="range" id="compareGap" min="0" max="16" step="1" value="8"><span class="val" id="compareGapVal">8px</span></div>
+          <div class="field"><label>标签</label><label class="chk"><input type="checkbox" id="compareLabels" checked> 显示 SDR / HDR 文字</label></div>
+          <div class="field"><label for="compareSize">输出尺寸</label><select id="compareSize">
+            <option value="social" selected>社交尺寸（长边 ≤4096）</option>
+            <option value="original">原分辨率（长边 ≤8192）</option>
+          </select></div>
+          <div class="field"><span></span><span class="hint">两半都是 SDR 底图，只有 HDR 那一半带真实增益图：SDR 屏两半一致，HDR 屏另一半会提亮。水印/标签/中缝不参与提亮。</span></div>
+        </div>
 
         <h3 style="margin-top:16px">JPEG 质量</h3>
         <div class="field range"><label for="exportQuality">质量</label><input type="range" id="exportQuality" min="70" max="100" step="1" value="92"><span class="val" id="qualityVal">92</span></div>
@@ -1438,6 +1454,12 @@ const els = {
   wmPosition: document.getElementById("wmPosition"),
   wmMargin: document.getElementById("wmMargin"),
   wmMarginVal: document.getElementById("wmMarginVal"),
+  compareFields: document.getElementById("compareFields"),
+  compareOrder: document.getElementById("compareOrder"),
+  compareGap: document.getElementById("compareGap"),
+  compareGapVal: document.getElementById("compareGapVal"),
+  compareLabels: document.getElementById("compareLabels"),
+  compareSize: document.getElementById("compareSize"),
   wmOpacity: document.getElementById("wmOpacity"),
   wmOpacityVal: document.getElementById("wmOpacityVal"),
   exportInfo: document.getElementById("exportInfo"),
@@ -1908,10 +1930,18 @@ function readExportOpts() {
     marginPct: num(els.wmMargin, 3),
     opacity: clamp(num(els.wmOpacity, 70) / 100, 0, 1),
   };
+  const outputMode = els.outputMode ? els.outputMode.value : "single";
+  const compare = {
+    order: els.compareOrder ? els.compareOrder.value : "sdr-top",
+    gap: clamp(num(els.compareGap, 8), 0, 16),
+    labels: els.compareLabels ? els.compareLabels.checked : true,
+    size: els.compareSize ? els.compareSize.value : "social",
+  };
   return {
     quality: clamp(num(els.exportQuality, 92), 70, 100),
     filenamePrefix: els.filenamePrefix ? els.filenamePrefix.value.trim() : "",
-    outputMode: "single",
+    outputMode,
+    compare,
     watermark: wm,
     logoBitmap: state.wmLogoBitmap,
   };
@@ -1926,7 +1956,7 @@ function watermarkEffective(wm, logoBitmap) {
 
 function needReencodeForExport(params, opts) {
   const logo = (opts && (opts.logoBitmap || state.wmLogoBitmap)) || state.wmLogoBitmap;
-  return !!(params.exposureEv > 0.001) || !!state.isPng ||
+  return !!(opts && opts.outputMode === "compare") || !!(params.exposureEv > 0.001) || !!state.isPng ||
     watermarkEffective(opts && opts.watermark, logo);
 }
 
@@ -2055,7 +2085,133 @@ async function canvasToJpegBytes(canvas, quality) {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-/** 通用输出构建：普通模式（SDR 原字节保留）或重编码模式（曝光/PNG/水印） */
+/** SDR/HDR 对比拼图的输出尺寸（社交尺寸长边≤4096；原分辨率模式长边≤8192 防内存爆） */
+function compareOutputDims(w, h, opts) {
+  const cmp = (opts && opts.compare) || {};
+  const gap = Math.max(0, Math.round(cmp.gap == null ? 8 : cmp.gap));
+  const baseW = w, baseH = 2 * h + gap;
+  const maxLong = (cmp.size || "social") === "original" ? 8192 : 4096;
+  const scale = Math.min(1, maxLong / Math.max(baseW, baseH));
+  const outW = Math.max(1, Math.round(baseW * scale));
+  const halfH = Math.max(1, Math.round(h * scale));
+  const gap2 = Math.max(0, Math.round(gap * scale));
+  return { scale, W: outW, halfH, gap: gap2, H: halfH * 2 + gap2, maxLong };
+}
+
+/** 在对比拼图上绘制 SDR / HDR 标签（maskOnly 时白色用于清零蒙版） */
+function drawCompareLabels(ctx, W, halfH, gap, order, maskOnly) {
+  const sdrTop = (order || "sdr-top") === "sdr-top";
+  const labels = sdrTop ? ["SDR", "HDR"] : ["HDR", "SDR"];
+  const size = Math.max(14, Math.round(Math.min(W, halfH) * 0.03));
+  const margin = Math.max(8, Math.round(Math.min(W, halfH) * 0.024));
+  const tops = [0, halfH + gap];
+  ctx.save();
+  ctx.font = `700 ${size}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  for (let i = 0; i < labels.length; i++) {
+    ctx.fillStyle = maskOnly ? "#ffffff" : "rgba(255,255,255,0.92)";
+    if (!maskOnly) {
+      ctx.shadowColor = "rgba(0,0,0,0.55)";
+      ctx.shadowBlur = Math.max(3, size * 0.35);
+      ctx.shadowOffsetY = Math.max(1, size * 0.06);
+    }
+    ctx.fillText(labels[i], margin, tops[i] + halfH - margin);
+  }
+  ctx.restore();
+}
+
+/** 构建 SDR/HDR 上下对比拼图（真 HDR：下半带真实增益图，SDR 屏两半一致） */
+async function buildCompareOutputBytes(bitmap, originalBytes, params, orientation, inputIsPng, profile, opts) {
+  const w = bitmap.width, h = bitmap.height;
+  const dims = compareOutputDims(w, h, opts);
+  const order = (opts.compare && opts.compare.order) || "sdr-top";
+  const sdrTop = order === "sdr-top";
+  const gainScale = params.gainScale || 1;
+  const gw = Math.max(1, Math.round(w * gainScale));
+  const gh = Math.max(1, Math.round(h * gainScale));
+
+  // 1) SDR 底图（曝光/PNG 模式可能重编码；拼图时暂时不加水印，水印加在拼图成品上）
+  const baseCanvas = await buildBaseCanvas(bitmap, params, { applyExposure: profile.exposureMode, watermark: null, logoBitmap: null });
+
+  // 2) 拼图底图（两半都是 SDR 画面 + 中缝 + 标签 + 水印）
+  const canvas = document.createElement("canvas");
+  canvas.width = dims.W; canvas.height = dims.H;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.fillStyle = "#101318";
+  ctx.fillRect(0, 0, dims.W, dims.H);
+  const topY = sdrTop ? 0 : dims.halfH + dims.gap;
+  const botY = sdrTop ? dims.halfH + dims.gap : 0;
+  ctx.drawImage(baseCanvas, 0, 0, w, h, 0, topY, dims.W, dims.halfH);
+  ctx.drawImage(baseCanvas, 0, 0, w, h, 0, botY, dims.W, dims.halfH);
+  if (!opts.compare || opts.compare.labels !== false) {
+    drawCompareLabels(ctx, dims.W, dims.halfH, dims.gap, order, false);
+  }
+  const wm = opts.watermark || { type: "none" };
+  const logo = opts.logoBitmap || state.wmLogoBitmap;
+  if (watermarkEffective(wm, logo)) drawWatermark(ctx, dims.W, dims.H, wm, logo, false);
+
+  const quality = clamp((opts.quality == null ? 92 : opts.quality) / 100, 0.7, 1);
+  let baseBytes = await canvasToJpegBytes(canvas, quality);
+  if (!inputIsPng && (!orientation || orientation === 1)) {
+    baseBytes = insertSegmentsAfterApps(baseBytes, extractAppSegments(originalBytes));
+  }
+
+  // 3) 增益图：上半清零，下半使用正常增益分布
+  const gainJpeg = await buildGainMapJpeg(bitmap, gw, gh, profile, {});
+  const gW = Math.max(1, Math.round(dims.W * gainScale));
+  const gH = Math.max(1, Math.round(dims.H * gainScale));
+  const gCanvas = document.createElement("canvas");
+  gCanvas.width = gW; gCanvas.height = gH;
+  const gctx = gCanvas.getContext("2d", { willReadFrequently: true });
+  gctx.fillStyle = "#000";
+  gctx.fillRect(0, 0, gW, gH);
+  const gainBmp = await createImageBitmap(new Blob([gainJpeg], { type: "image/jpeg" }));
+  const gHalfH = Math.max(1, Math.round(dims.halfH * gainScale));
+  const gGap = Math.max(0, Math.round(dims.gap * gainScale));
+  const hdrTopY = sdrTop ? gHalfH + gGap : 0;
+  gctx.drawImage(gainBmp, 0, 0, gw, gh, 0, hdrTopY, gW, gHalfH);
+  gainBmp.close && gainBmp.close();
+
+  // 4) 蒙版：中缝、标签、水印区域增益清零
+  const mask = document.createElement("canvas");
+  mask.width = dims.W; mask.height = dims.H;
+  const mctx = mask.getContext("2d", { willReadFrequently: true });
+  if (dims.gap > 0) {
+    mctx.fillStyle = "#ffffff";
+    mctx.fillRect(0, dims.halfH, dims.W, dims.gap);
+  }
+  if (!opts.compare || opts.compare.labels !== false) {
+    drawCompareLabels(mctx, dims.W, dims.halfH, dims.gap, order, true);
+  }
+  if (watermarkEffective(wm, logo)) drawWatermark(mctx, dims.W, dims.H, wm, logo, true);
+
+  const small = document.createElement("canvas");
+  small.width = gW; small.height = gH;
+  const sctx = small.getContext("2d", { willReadFrequently: true });
+  sctx.drawImage(mask, 0, 0, gW, gH);
+  const md = sctx.getImageData(0, 0, gW, gH).data;
+  const gi = gctx.getImageData(0, 0, gW, gH);
+  const gd = gi.data;
+  for (let i = 0; i < gd.length; i += 4) {
+    if (md[i + 3]) { gd[i] = 0; gd[i + 1] = 0; gd[i + 2] = 0; }
+  }
+  gctx.putImageData(gi, 0, 0);
+
+  const gainBlob = await canvasToBlob(gCanvas, "image/jpeg", JPEG_QUALITY);
+  const gainComposite = new Uint8Array(await gainBlob.arrayBuffer());
+  const meta = profile.exposureMode ? makeMeta(params.strength, profile.K) : makeMeta(params.strength);
+  return {
+    bytes: assembleUltraHdr(baseBytes, gainComposite, meta),
+    meta,
+    profile,
+    baseDims: [dims.W, dims.H],
+    compare: true,
+    reencoded: true,
+  };
+}
+
+/** 通用输出构建：普通模式（SDR 原字节保留）或重编码模式（曝光/PNG/水印/拼图） */
 async function buildOutputBytesGeneric(bitmap, originalBytes, params, orientation, inputIsPng, exportOpts) {
   exportOpts = exportOpts || readExportOpts();
   const w0 = bitmap.width, h0 = bitmap.height;
@@ -2063,6 +2219,9 @@ async function buildOutputBytesGeneric(bitmap, originalBytes, params, orientatio
   const gw = Math.max(1, Math.round(w0 * gainScale));
   const gh = Math.max(1, Math.round(h0 * gainScale));
   const profile = makeProfile(params, gainScale);
+  if (exportOpts.outputMode === "compare") {
+    return await buildCompareOutputBytes(bitmap, originalBytes, params, orientation, inputIsPng, profile, exportOpts);
+  }
   const wm = exportOpts.watermark || { type: "none" };
   const wmActive = watermarkEffective(wm, exportOpts.logoBitmap || state.wmLogoBitmap);
   const needReencode = profile.exposureMode || !!inputIsPng || wmActive;
@@ -2132,6 +2291,7 @@ function baseNameOfFile() {
 
 function downloadFileName(opts) {
   const prefix = (opts && opts.filenamePrefix ? opts.filenamePrefix : baseNameOfFile()) || "HDR";
+  if (opts && opts.outputMode === "compare") return prefix + "_SDR-HDR对比.jpg";
   return prefix + "_HDR.jpg";
 }
 
@@ -2142,6 +2302,7 @@ function updateExportLabels() {
   if (els.wmLogoScaleVal) els.wmLogoScaleVal.textContent = (opts.watermark.logoScalePct || 12) + "% 短边";
   if (els.wmMarginVal) els.wmMarginVal.textContent = (opts.watermark.marginPct || 0) + "%";
   if (els.wmOpacityVal) els.wmOpacityVal.textContent = Math.round((opts.watermark.opacity == null ? 0.7 : opts.watermark.opacity) * 100) + "%";
+  if (els.compareGapVal) els.compareGapVal.textContent = Math.round(opts.compare.gap) + "px";
 }
 
 function updateWatermarkUi() {
@@ -2150,6 +2311,8 @@ function updateWatermarkUi() {
   els.wmTextFields.classList.toggle("hidden", type !== "text");
   els.wmImageFields.classList.toggle("hidden", type !== "image");
   els.wmCommonFields.classList.toggle("hidden", type === "none");
+  const mode = els.outputMode ? els.outputMode.value : "single";
+  els.compareFields.classList.toggle("hidden", mode !== "compare");
   updateExportLabels();
 }
 
@@ -2170,20 +2333,28 @@ function updateExportInfo() {
   const needRe = needReencodeForExport(params, opts);
   const wmType = opts.watermark.type;
   const wmText = wmType === "none" ? "无" : wmType === "text" ? "文字" : "图片 Logo";
+  const isCompare = opts.outputMode === "compare";
+  const cmpDims = isCompare ? compareOutputDims(w, h, opts) : null;
   let baseMode;
   if (!needRe) baseMode = "原图直通（字节保留）";
+  else if (isCompare) baseMode = "重编码（SDR/HDR 拼图）";
   else if (params.exposureEv > 0.001) baseMode = "重编码（整体曝光）";
   else if (state.isPng) baseMode = "重编码（PNG → JPEG）";
   else baseMode = "重编码（加水印）";
   const outName = downloadFileName(opts);
+  const outDimText = isCompare
+    ? `${cmpDims.W}×${cmpDims.H}（拼图，输出比例 ${(cmpDims.scale * 100).toFixed(0)}%）`
+    : `${w}×${h}（${(w * h / 1e6).toFixed(1)} MP）`;
   const lines = [
     `输出文件：<b>${escapeHtml(outName)}</b>`,
-    `尺寸：<b>${w}×${h}</b>（${(w * h / 1e6).toFixed(1)} MP）`,
+    `模式：<b>${isCompare ? "SDR / HDR 对比拼图" : "单张 HDR"}</b>`,
+    `尺寸：<b>${outDimText}</b>`,
     `底图：<b>${baseMode}</b>`,
     `JPEG 质量：<b>${needRe ? Math.round(opts.quality) : "原图"}</b>`,
     `水印：<b>${wmText}</b>`,
-    `增益图：<b>${gw}×${gh}</b>（${((params.gainScale || 1) * 100).toFixed(0)}%）`,
+    `增益图：<b>${isCompare ? "下半区" : gw + "×" + gh}</b>${isCompare ? "" : "（" + ((params.gainScale || 1) * 100).toFixed(0) + "%）"}`,
   ];
+  if (isCompare) lines.push(`拼图：<b>${opts.compare.order === "hdr-top" ? "HDR 上 / SDR 下" : "SDR 上 / HDR 下"}</b> · 中缝 ${Math.round(opts.compare.gap)}px · ${opts.compare.labels ? "有标签" : "无标签"}`);
   if (params.exposureEv > 0.001) lines.push(`整体曝光：<b>+${params.exposureEv.toFixed(1)} EV</b>`);
   if (wmType === "image" && !state.wmLogoBitmap) lines.push(`<span style="color:var(--warn)">⚠ 请先选择 Logo 图片</span>`);
   if (wmType === "text" && !(opts.watermark.text || "").trim()) lines.push(`<span style="color:var(--warn)">⚠ 请输入水印文字</span>`);
@@ -2322,12 +2493,14 @@ async function exportHdr() {
     const ms = Math.round(performance.now() - t0);
     updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, outBytes.length);
     const extras = [];
+    if (opts.outputMode === "compare") extras.push("SDR/HDR 对比拼图");
     if (needRe) extras.push(`底图重编码 q=${Math.round(opts.quality)}`);
     if (opts.watermark.type !== "none") extras.push("水印已加在 SDR 层");
     setStatus(`完成 · 用时 ${ms} ms · 已开始下载`, false);
     setExportStatus(`完成 · ${filename} · ${(outBytes.length / 1024).toFixed(0)} KB · ${ms} ms${extras.length ? " · " + extras.join(" · ") : ""}`);
     els.result.classList.remove("hidden");
     els.resultText.textContent = `已生成 ${filename}（${(outBytes.length / 1024).toFixed(0)} KB）。` +
+      (opts.outputMode === "compare" ? " 对比拼图：SDR 屏上两半一致，HDR 屏上其中一半会真实提亮。" : "") +
       (opts.watermark.type !== "none" ? " 水印添加在 SDR 层，不参与 HDR 提亮。" : "") +
       " 建议在 HDR 屏和普通屏上各确认一次效果。";
   } catch (e) {
@@ -2671,6 +2844,9 @@ function bindUi() {
   [els.exportQuality, els.wmFontSize, els.wmLogoScale, els.wmMargin, els.wmOpacity]
     .forEach((el) => { if (el) el.addEventListener("input", onExportOptsChanged); });
   [els.wmType, els.wmPosition].forEach((el) => { if (el) el.addEventListener("change", onExportOptsChanged); });
+  [els.outputMode, els.compareOrder, els.compareSize].forEach((el) => { if (el) el.addEventListener("change", onExportOptsChanged); });
+  if (els.compareGap) els.compareGap.addEventListener("input", onExportOptsChanged);
+  if (els.compareLabels) els.compareLabels.addEventListener("change", onExportOptsChanged);
   if (els.wmText) els.wmText.addEventListener("input", onExportOptsChanged);
   if (els.wmColor) els.wmColor.addEventListener("input", onExportOptsChanged);
   if (els.filenamePrefix) els.filenamePrefix.addEventListener("input", updateExportInfo);
@@ -2712,7 +2888,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.12",
+  version: "0.13",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;

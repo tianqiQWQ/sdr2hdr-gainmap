@@ -14,6 +14,7 @@
 - **手机端**：只显示 HDR 图 + 底部参数条（核心 5 项 + 高级），点选参数才展开滑块；底部导航同桌面
 - **独立导出界面**：JPEG 质量（70–100，仅重编码底图时生效）、文字水印 / 图片 Logo 水印（后加在 SDR 层，不参与 HDR 提亮）
 - **成品预览**：全屏显示最终导出字节（含质量/水印设置），按最终分辨率原生渲染
+- **SDR/HDR 对比拼图**：导出上下对照图（真 HDR：HDR 一半带真实增益图），可切换顺序、标签、中缝与输出尺寸，适合分享
 - **上传校验**：自动识别已带增益图的 HDR JPEG（hdrgm / GContainer / ISO 21496-1 + MPF 多图结构），提示错误并拒绝重复处理
 - 点击编辑页画面也可进入成品预览，支持适应窗口 / 1:1、下载当前成品
 - 本机 HDR 能力检测（`dynamic-range` 媒体查询），支持"真 HDR 预览"
@@ -41,6 +42,10 @@ https://tianqiQWQ.github.io/sdr2hdr-gainmap/
 | 手机端（单图 + 参数条） | 手机端参数面板 |
 |---|---|
 | ![手机端](assets/screenshots/mobile.png) | ![手机参数面板](assets/screenshots/mobile-sheet.png) |
+
+| SDR/HDR 对比拼图（导出设置） | 对比拼图成品预览 |
+|---|---|
+| ![拼图设置](assets/screenshots/compare.png) | ![拼图预览](assets/screenshots/compare-preview.png) |
 
 ## 快速开始
 
@@ -75,6 +80,10 @@ https://tianqiQWQ.github.io/sdr2hdr-gainmap/
   - 水印在转换完成后添加在 **SDR 底图**上，对应区域的增益图会被清零 → HDR 屏上水印不会变亮
 - **成品预览**：默认全屏显示最终输出（含质量/水印），可直接下载当前成品
 - 在导出界面点「成品预览」也会按当前导出设置生成
+- **输出模式**：
+  - 单张 HDR：普通输出 `原名_HDR.jpg`
+  - **SDR / HDR 对比拼图**：`原名_SDR-HDR对比.jpg`，上下两半为同一张 SDR 底图，HDR 那一半带真实增益图；
+    可切换 SDR/HDR 上下顺序、标签、中缝（0–16px）、输出尺寸（社交长边 ≤4096 / 原分辨率长边 ≤8192）
 
 ## 输入 / 输出格式
 

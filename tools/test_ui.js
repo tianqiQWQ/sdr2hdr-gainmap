@@ -227,6 +227,40 @@ const SHOTS = path.join(ROOT, "tests");
   if (!rejectInfo.banner) errors.push("already-HDR input was not rejected");
   await shot("ui_v10_reject.png");
 
+  // ---- SDR/HDR 对比拼图导出 ----
+  await page.click("#exportBtn");
+  await page.waitForFunction('!document.getElementById("exportScreen").classList.contains("hidden")', { timeout: 10000 });
+  await page.select("#outputMode", "compare");
+  await new Promise((r) => setTimeout(r, 400));
+  const cmpUi = await page.evaluate(() => ({
+    fields: !document.getElementById("compareFields").classList.contains("hidden"),
+    info: document.getElementById("exportInfo").innerText.replace(/\s+/g, " ").slice(0, 140),
+    qualityDisabled: document.getElementById("exportQuality").disabled,
+    name: document.getElementById("exportHeadInfo").textContent,
+  }));
+  console.log("compare UI:", JSON.stringify(cmpUi));
+  if (!cmpUi.fields || cmpUi.qualityDisabled || !cmpUi.name.includes("SDR-HDR")) errors.push("compare UI wrong");
+  await shot("ui_v13_export_compare.png");
+  await page.click("#exportStart");
+  await page.waitForFunction('document.getElementById("exportStatus").textContent.indexOf("完成") >= 0', { timeout: 120000 });
+  await new Promise((r) => setTimeout(r, 1500));
+  const files2 = fs.readdirSync(downloadDir);
+  console.log("downloads after compare:", files2);
+  const cmpFile = files2.find((f) => f.includes("SDR-HDR")) || files2[files2.length - 1];
+  const cmpDims = await page.evaluate(async (url) => await new Promise((res, rej) => {
+    const im = new Image(); im.onload = () => res([im.naturalWidth, im.naturalHeight]); im.onerror = rej; im.src = url;
+  }), "file://" + path.join(downloadDir, cmpFile));
+  console.log("compare decoded dims:", cmpFile, cmpDims);
+  if (!(cmpDims[1] > 3000 && cmpDims[0] > 1000)) errors.push("compare image dims wrong");
+  await shot("ui_v13_compare_done.png");
+
+  // 对比图同样含增益图，重新上传应被拒绝
+  await (await page.$("#file")).uploadFile(path.join(downloadDir, cmpFile));
+  await new Promise((r) => setTimeout(r, 1000));
+  const cmpReject = await page.evaluate(() => !document.getElementById("loadError").classList.contains("hidden"));
+  console.log("compare re-upload rejected:", cmpReject);
+  if (!cmpReject) errors.push("compare image not rejected");
+
   console.log("js errors:", errors.length ? errors : "none");
   if (errors.length || !files.length) process.exitCode = 1;
   await browser.close();
