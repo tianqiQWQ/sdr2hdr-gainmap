@@ -1,6 +1,6 @@
 {
   "name": "sdr2hdr-gainmap",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "Single-file local web app: convert SDR JPG/PNG photos into HDR JPEGs with a gain map (Ultra HDR style).",
   "scripts": {

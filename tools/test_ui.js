@@ -165,6 +165,18 @@ const SHOTS = path.join(ROOT, "tests");
     const im = new Image(); im.onload = () => res([im.naturalWidth, im.naturalHeight]); im.onerror = rej; im.src = url;
   }), "file://" + path.join(downloadDir, files[0]));
   console.log("Chrome decoded export:", dims);
+  // 回归：把刚导出的 HDR 图（已含增益图）再上传，应被检测并拒绝
+  const exportedPath = path.join(downloadDir, files[0]);
+  await (await page.$("#file")).uploadFile(exportedPath);
+  await new Promise((r) => setTimeout(r, 1200));
+  const rejectInfo = await page.evaluate(() => ({
+    banner: !document.getElementById("loadError").classList.contains("hidden"),
+    text: document.getElementById("loadError").textContent.replace(/\s+/g, " ").slice(0, 80),
+  }));
+  console.log("HDR re-upload rejected:", JSON.stringify(rejectInfo));
+  if (!rejectInfo.banner) errors.push("already-HDR input was not rejected");
+  await shot("ui_v9_reject.png");
+
   console.log("js errors:", errors.length ? errors : "none");
   if (errors.length || !hidden || !files.length) process.exitCode = 1;
   await browser.close();
