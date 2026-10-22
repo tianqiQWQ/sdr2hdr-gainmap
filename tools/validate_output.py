@@ -350,7 +350,8 @@ def main():
     ap.add_argument("--detail-radius", type=float, default=16, help="detail radius in image px")
     ap.add_argument("--clarity", type=float, default=15, help="local contrast percent")
     ap.add_argument("--base-reencoded", action="store_true", help="input was re-encoded into JPEG base (e.g. PNG)")
-    ap.add_argument("--exposure-ev", type=float, default=0.0, help="overall exposure lift in EV")
+    ap.add_argument("--exposure-ev", type=float, default=0.0, help="overall HDR exposure lift in EV (SDR base unchanged)")
+    ap.add_argument("--exposure-only", action="store_true", help="exposure-only mode: ignore other params")
     ap.add_argument("--output-mode", choices=["single", "compare"], default="single", help="single HDR or SDR/HDR comparison collage")
     ap.add_argument("--compare-order", choices=["sdr-top", "hdr-top"], default="sdr-top")
     ap.add_argument("--compare-gap", type=int, default=8)
@@ -378,22 +379,16 @@ def main():
     expected_M = 3.0 * strength
     exposure_ev = args.exposure_ev
     exposure_mode = exposure_ev > 0.001
+    exposure_only = bool(args.exposure_only and exposure_mode)
     F_exp = 2.0 ** exposure_ev if exposure_mode else 1.0
-    comp = args.highlight_compress / 100.0
-
-    def tone_exp(z, compress):
-        t = 0.15
-        z = np.asarray(z, np.float64)
-        out = np.where(z <= t, z, t + (1 - t) * (1 - np.exp(-(z - t) / (1 - t) * 0.25)))
-        if compress < 1:
-            out = (1 - compress) * np.minimum(z, 1) + compress * out
-        return out
+    M_exp = 3.0 * (args.strength / 100.0)
+    off = 0.015625
 
     if exposure_mode:
-        zd_max = float(tone_exp(F_exp, comp))
-        expected_M = expected_M + float(np.log2(F_exp / max(zd_max, 1e-6))) + 0.05
-        print(f"    exposure mode: EV={exposure_ev:+.2f}, F={F_exp:.2f}, compress={args.highlight_compress:.0f}%, "
-              f"expected gain range 0..{expected_M:.3f} stops")
+        extra_max = 1.0 if exposure_only else (2.0 ** M_exp)
+        expected_M = float(np.log2((F_exp * extra_max + off) / (1.0 + off)))
+        print(f"    exposure mode (HDR-only): EV={exposure_ev:+.2f}, F={F_exp:.2f}, "
+              f"exposure_only={exposure_only}, expected gain range 0..{expected_M:.3f} stops")
 
     print(f"=== validate {out_path.name} vs {orig_path.name} "
           f"(strength={args.strength}, gain_scale={args.gain_scale}, expected max={expected_M:.3f} stops) ===")
@@ -462,9 +457,9 @@ def main():
                     break
     except Exception:
         orig_exif = None  # 非 JPEG 输入（如 PNG）
-    if exposure_mode or args.base_reencoded or args.output_mode == "compare":
-        print("\n[3] base re-encoded (exposure / non-JPEG input), metadata preservation")
-        if exposure_mode and not args.base_reencoded and orig_exif is not None:
+    if args.base_reencoded or args.output_mode == "compare":
+        print("\n[3] base re-encoded (non-JPEG input / watermark / collage), metadata preservation")
+        if not args.base_reencoded and orig_exif is not None:
             ck.check(get_segment_payload(out, 0xE1, EXIF_ID) == orig_exif,
                      "EXIF segment preserved after base re-encode")
         ck.check(sum(1 for x in xmp_primary_all if "hdrgm:" in x) == 1,
@@ -497,8 +492,8 @@ def main():
                  "no leftover stale hdrgm XMP in primary")
 
     # ---------------- [4] pixels / HDR reconstruction ----------------
-    if exposure_mode:
-        print("\n[4] pixels / HDR reconstruction (exposure mode)")
+    if exposure_mode and args.output_mode != "compare":
+        print("\n[4] pixels / HDR reconstruction (exposure mode: HDR-only lift)")
         base = Image.open(io.BytesIO(out[:primary_size]))
         gm = Image.open(io.BytesIO(secondary))
         orig_img = Image.open(io.BytesIO(orig)).convert("RGB")
@@ -506,33 +501,16 @@ def main():
         exp_w = max(1, round(W * args.gain_scale))
         exp_h = max(1, round(H * args.gain_scale))
         ck.check(abs(gm.size[0] - exp_w) <= 1 and abs(gm.size[1] - exp_h) <= 1,
-                 "gain map dimensions match selected resolution",
-                 f"{gm.size} vs {(exp_w, exp_h)}")
+                 "gain map dimensions match selected resolution", f"{gm.size} vs {(exp_w, exp_h)}")
         a_base = np.asarray(base.convert("RGB"), np.float32)
         a_orig = np.asarray(orig_img.resize(base.size, Image.BILINEAR), np.float32)
-        ck.check(not np.array_equal(a_base.astype(np.uint8), a_orig.astype(np.uint8)),
-                 "SDR base was re-encoded (exposure mode)")
-
-        # 期望的曝光底图
-        x = srgb_inv(a_orig.astype(np.float64) / 255.0)
-        Y = 0.2126 * x[..., 0] + 0.7152 * x[..., 1] + 0.0722 * x[..., 2]
-        z = Y * F_exp
-        zd = tone_exp(z, comp)
-        scale = np.where(z > 1e-7, zd / np.maximum(z, 1e-7), 0.0)
-        exp_base = (srgb_fwd(np.clip(x * F_exp * scale[..., None], 0, 1)) * 255.0).round()
-        dbase = np.abs(a_base.astype(np.float64) - exp_base)
-        ck.check(float(np.median(dbase)) < 12,
-                 "SDR base matches exposure tone-map",
-                 f"median {float(np.median(dbase)):.2f}, p90 {float(np.percentile(dbase, 90)):.2f}")
-
-        Lb = (0.2126 * srgb_inv(a_base[..., 0] / 255.0)
-              + 0.7152 * srgb_inv(a_base[..., 1] / 255.0)
-              + 0.0722 * srgb_inv(a_base[..., 2] / 255.0))
-        dark = (Y > 1e-4) & (Y < 0.01)
-        lift = float(np.median(Lb[dark] / Y[dark])) if dark.sum() > 500 else float("nan")
-        ck.check(dark.sum() > 500 and 0.7 * F_exp <= lift <= 1.3 * F_exp,
-                 "dark background lifted by ~2^EV",
-                 f"median lift {lift:.2f} vs {F_exp:.2f}")
+        if args.base_reencoded:
+            dd = np.abs(a_base.astype(np.int16) - a_orig.astype(np.int16))
+            ck.check(float(np.median(dd)) < 6, "SDR base close to original (re-encoded)",
+                     f"median {float(np.median(dd)):.2f}")
+        else:
+            ck.check(np.array_equal(a_base.astype(np.int16), a_orig.astype(np.int16)),
+                     "SDR base pixels identical to original (exposure is HDR-only)")
 
         # 校验尺度
         check_scale = 1.0
@@ -549,7 +527,7 @@ def main():
         gm_c = gm.convert("L").resize(base_c.size, Image.BILINEAR)
         gm_vals = np.asarray(gm_c, np.float32) / 255.0
 
-        # 期望增益图（原始像素算启发式 + 曝光恢复项）
+        # 期望增益：HDR 目标 = 原图线性 × 2^EV × 高光增强；按 offset 补偿反推解码 boost
         b = np.asarray(orig_c, np.float32)
         lum = (54.0 * b[..., 0] + 183.0 * b[..., 1] + 19.0 * b[..., 2]) / 256.0
         maxc = b.max(axis=2)
@@ -560,42 +538,42 @@ def main():
         rad_c = max(3, int(round(max(24.0, args.detail_radius * 4.0) * check_scale)))
         detail = lum - box_blur_np(lum, rad_d)
         clarity = lum - box_blur_np(lum, rad_c)
-        metric = np.minimum(
-            255.0,
-            base_metric
-            + (args.detail / 100.0) * np.maximum(detail, 0)
-            + (args.clarity / 100.0) * np.maximum(clarity, 0),
-        )
+        metric = np.minimum(255.0, base_metric
+                            + (args.detail / 100.0) * np.maximum(detail, 0)
+                            + (args.clarity / 100.0) * np.maximum(clarity, 0))
         g_heur = np.clip((metric - args.knee) / (255.0 - args.knee), 0, 1) ** args.pow
-        M_val = 3.0 * (args.strength / 100.0)
-        zc = Yc * F_exp
-        zdc = tone_exp(zc, comp)
-        recover = np.where(zdc > 1e-7, np.log2(np.maximum(zc, 1e-7) / np.maximum(zdc, 1e-7)), 0.0)
-        g_exp = np.clip((M_val * g_heur + recover) / expected_M, 0, 1)
+        extra = np.ones_like(Yc) if exposure_only else np.power(2.0, M_exp * g_heur)
+        target = Yc * F_exp * extra
+        log_boost = np.log2((target + off) / (Yc + off))
+        g_exp = np.clip(log_boost / expected_M, 0, 1)
         dg = np.abs(gm_vals - g_exp)
-        ck.check(float(np.median(dg)) < 0.08,
-                 "gain map follows exposure synthesis curve",
+        ck.check(float(np.median(dg)) < 0.08, "gain map follows HDR exposure synthesis",
                  f"median {float(np.median(dg)):.4f}, p95 {float(np.percentile(dg, 95)):.4f}")
-        ck.check(float(np.percentile(dg, 95)) < 0.25,
-                 "gain map 95th-percentile deviation",
+        ck.check(float(np.percentile(dg, 95)) < 0.25, "gain map 95th-percentile deviation",
                  f"{float(np.percentile(dg, 95)):.4f}")
 
-        # HDR 重建检查
+        # HDR 重建：应等于 原图线性 × 2^EV（× 高光增强）
         hdr, boost = reconstruct_hdr(base_c, gm_c, meta)
         Yh = 0.2126 * hdr[..., 0] + 0.7152 * hdr[..., 1] + 0.0722 * hdr[..., 2]
-        dark_c = (Yc > 1e-4) & (Yc < 0.01)
-        if dark_c.sum() > 500:
-            ratio = float(np.median(Yh[dark_c] / (Yc[dark_c] * F_exp)))
-            ck.check(0.7 <= ratio <= 1.3, "HDR shadows ~= SDR original x 2^EV",
-                     f"median ratio {ratio:.2f}")
-        bright = Yc > 0.3
-        if bright.sum() > 500:
-            boosted = float(np.median(Yh[bright] / Yc[bright]))
-            ck.check(boosted > 1.5, "HDR highlights lifted above original",
-                     f"median {boosted:.2f}x")
+        m = target > 1e-5
+        ratio = Yh[m] / target[m]
+        ck.check(float(np.median(ratio)) > 0.7 and float(np.median(ratio)) < 1.3,
+                 "HDR reconstruction matches exposure target",
+                 f"median {float(np.median(ratio)):.3f}")
+        shadow_ratio = float(np.median(Yh[(Yc > 1e-4) & (Yc < 0.01)] / np.maximum(Yc[(Yc > 1e-4) & (Yc < 0.01)], 1e-9))) if ((Yc > 1e-4) & (Yc < 0.01)).sum() > 500 else float("nan")
+        ck.check(np.isfinite(shadow_ratio) and 0.7 * F_exp <= shadow_ratio <= 1.3 * F_exp,
+                 "HDR shadows lifted by ~2^EV (offset compensated)",
+                 f"median {shadow_ratio:.2f} vs {F_exp:.2f}")
+        if not exposure_only:
+            bright = Yc > 0.3
+            if bright.sum() > 500:
+                b_ratio = float(np.median(Yh[bright] / Yc[bright]))
+                ck.check(b_ratio > F_exp * 1.2, "HDR highlights lifted beyond exposure",
+                         f"median {b_ratio:.2f}x vs {F_exp:.2f}x")
         bmean = boost.mean(axis=2)
         bmax = 2 ** expected_M
-        print(f"    gain map range 0..{expected_M:.2f} stops; HDR linear luma max {float(Yh.max()):.2f}")
+        print(f"    exposure-only={exposure_only}; gain range 0..{expected_M:.2f} stops; "
+              f"shadow lift {shadow_ratio:.2f}x (2^EV={F_exp:.2f})")
     elif args.output_mode == "compare":
         print("\n[4] comparison collage")
         base = Image.open(io.BytesIO(out[:primary_size]))

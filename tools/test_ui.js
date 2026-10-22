@@ -95,7 +95,36 @@ const SHOTS = path.join(ROOT, "tests");
   // ---- 参数 / 曝光 / 高级 / 热力图 / 真 HDR 回归 ----
   await setSlider("exposureEv", 1.2);
   await new Promise((r) => setTimeout(r, 900));
-  await shot("ui_v10_exposure.png");
+  const expInfo = await page.evaluate(() => ({
+    sdr: document.getElementById("sdrCaption").textContent,
+    meta: document.getElementById("meta").innerText,
+  }));
+  console.log("exposure UI (HDR-only):", JSON.stringify({
+    sdrKept: expInfo.sdr.includes("保持不变"),
+    metaHdrOnly: expInfo.meta.includes("仅作用于 HDR"),
+  }));
+  if (!expInfo.sdr.includes("保持不变") || !expInfo.meta.includes("仅作用于 HDR")) errors.push("exposure should not modify SDR base");
+  await shot("ui_v14_exposure.png");
+
+  // 仅整体曝光：其他参数应被忽略（禁用）
+  await page.evaluate(() => {
+    const cb = document.getElementById("exposureOnly");
+    cb.checked = true;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await new Promise((r) => setTimeout(r, 700));
+  const only = await page.evaluate(() => ({
+    strengthDisabled: document.getElementById("strength").disabled,
+    meta: document.getElementById("meta").innerText,
+  }));
+  console.log("exposure-only UI:", JSON.stringify({ strengthDisabled: only.strengthDisabled, metaIgnored: only.meta.includes("仅整体曝光") }));
+  if (!only.strengthDisabled || !only.meta.includes("仅整体曝光")) errors.push("exposure-only toggle should disable other params");
+  await shot("ui_v14_exposure_only.png");
+  await page.evaluate(() => {
+    const cb = document.getElementById("exposureOnly");
+    cb.checked = false;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   await setSlider("exposureEv", 0);
   await new Promise((r) => setTimeout(r, 400));
 

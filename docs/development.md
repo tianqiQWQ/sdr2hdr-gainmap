@@ -33,7 +33,7 @@ node tools/test_encode.js '[{
   "input":"tests/input_synthetic_12mp.jpg",
   "params":{"strength":50,"knee":170,"detail":40,"color":85,"curvePow":1.6,
             "detailRadius":16,"clarity":15,"portrait":true,"portraitStrength":50,
-            "gainScale":1,"exposureEv":1.2,"highlightCompress":80},
+            "gainScale":1,"exposureEv":1.2,"exposureOnly":false},
   "output":"tests/out_exp.jpg"
 }]'
 ```
@@ -47,10 +47,10 @@ python3 tools/validate_output.py \
   --strength 50 --knee 170 --pow 1.6 --detail 40 --color 85 \
   --detail-radius 16 --clarity 15
 
-# 整体曝光模式（底图重编码）
+# 整体曝光（HDR-only：底图字节不变；可用 --exposure-only 校验“忽略其他参数”）
 python3 tools/validate_output.py \
   --output tests/out_exp.jpg --original tests/input_synthetic_12mp.jpg \
-  --strength 50 --exposure-ev 1.2 --clarity 15
+  --strength 50 --exposure-ev 1.2 --clarity 15 --exposure-only
 
 # PNG 输入（底图被转成 JPEG，用 --base-reencoded）
 python3 tools/validate_output.py \

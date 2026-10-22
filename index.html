@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDR → HDR 转换器（本地网页版）v0.13</title>
+<title>SDR → HDR 转换器（本地网页版）v0.14</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -112,6 +112,10 @@
   .side-panel .ctl label { grid-area: label; min-width: 0; }
   .side-panel .ctl input[type=range] { grid-area: slider; width: 100%; }
   .side-panel .ctl .val { grid-area: val; min-width: 0; text-align: right; }
+  .exposure-only-row { grid-column: 1 / -1; margin-top: -2px; }
+  .ctl.excluded { opacity: .42; }
+  .ctl.excluded input { cursor: not-allowed; }
+  .m-chip.excluded { opacity: .4; }
   @media (max-width: 900px) {
     .side-panel .ctl-grid { grid-template-columns: 1fr 1fr; }
     .side-panel .ctl { display: flex; flex-wrap: wrap; }
@@ -279,8 +283,8 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.13 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.13 更新：新增 SDR/HDR 对比拼图导出（真 HDR，可切换上下顺序/标签/中缝/尺寸，适合发小红书）</div>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.14 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.14 更新：整体曝光改为只作用于 HDR（SDR 底图字节不变，暗部做 Offset 补偿）；新增“仅整体曝光”开关</div>
   <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
      <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
 </header>
@@ -342,6 +346,7 @@
         <div class="ctl"><label for="detail">细节增强</label><input type="range" id="detail" min="0" max="100" step="1" value="40"><span class="val" id="detailVal"></span></div>
         <div class="ctl"><label for="color">彩色高光</label><input type="range" id="color" min="0" max="100" step="1" value="85"><span class="val" id="colorVal"></span></div>
         <div class="ctl"><label for="exposureEv">整体曝光</label><input type="range" id="exposureEv" min="0" max="3" step="0.1" value="0"><span class="val" id="exposureVal"></span></div>
+        <div class="ctl exposure-only-row"><label class="chk"><input type="checkbox" id="exposureOnly"> 仅整体曝光（忽略其他参数）</label></div>
       </div>
 
       <details id="advanced">
@@ -350,7 +355,7 @@
           <div class="ctl"><label for="curvePow">过渡曲线</label><input type="range" id="curvePow" min="1" max="3" step="0.05" value="1.6"><span class="val" id="curveVal"></span></div>
           <div class="ctl"><label for="detailRadius">细节尺度</label><input type="range" id="detailRadius" min="4" max="40" step="1" value="16"><span class="val" id="radiusVal"></span></div>
           <div class="ctl"><label for="clarity">通透感</label><input type="range" id="clarity" min="0" max="100" step="1" value="15"><span class="val" id="clarityVal"></span></div>
-          <div class="ctl"><label for="highlightCompress">高光柔化</label><input type="range" id="highlightCompress" min="0" max="100" step="1" value="80"><span class="val" id="compressVal"></span></div>
+          <!-- 高光柔化已随“整体曝光只作用于 HDR”改动移除（不再修改底图，无需滚降） -->
         </div>
         <div class="ctl-row" style="margin-top:12px">
           <label class="chk"><input type="checkbox" id="portrait" checked> 人像保护</label>
@@ -407,7 +412,7 @@
 
         <h3 style="margin-top:16px">JPEG 质量</h3>
         <div class="field range"><label for="exportQuality">质量</label><input type="range" id="exportQuality" min="70" max="100" step="1" value="92"><span class="val" id="qualityVal">92</span></div>
-        <div class="field"><span></span><span class="hint" id="qualityHint">普通 JPG 直通时质量由原图决定；重编码模式（水印/曝光/PNG）下生效。</span></div>
+        <div class="field"><span></span><span class="hint" id="qualityHint">普通 JPG 直通时质量由原图决定；重编码模式（水印 / PNG / 对比拼图）下生效。</span></div>
 
         <h3 style="margin-top:16px">水印</h3>
         <div class="field"><label for="wmType">类型</label><select id="wmType">
@@ -779,15 +784,13 @@ const DEFAULT_PARAMS = {
   portrait: true,        // 人像保护
   portraitStrength: 50,  // 0-100
   gainScale: 1,          // 1 | 0.5
-  exposureEv: 0,         // 0-3 EV：整体曝光提升（会重编码 SDR 底图）
-  highlightCompress: 80, // 0-100：曝光提升时的高光柔化（0=直接裁剪，100=强压缩）
+  exposureEv: 0,         // 0-3 EV：整体曝光提升（只作用于 HDR，SDR 底图不变）
+  exposureOnly: false,   // 开启后忽略其他参数，只做整体曝光
+  highlightCompress: 80, // 已弃用（保留字段兼容旧参数对象）
 };
 
 const OFFSET = 0.015625;   // 1/64，与 Adobe/Apple 参考一致
 const JPEG_QUALITY = 0.90; // 增益图质量
-// 整体曝光提升的软肩压缩参数（拟合自 PS 32-bit 拉曝光参考图）
-const EXPOSURE_T = 0.15;
-const EXPOSURE_K = 0.25;
 // sRGB(0-255) -> 线性 的查表（性能）
 const SRGB_LIN_LUT = (() => {
   const l = new Float32Array(256);
@@ -822,34 +825,18 @@ function buildGainLut(knee, curvePow) {
   return lut;
 }
 
-/**
- * 曝光提升的色调映射：z 为线性光亮度（已乘 2^EV），输出 [0,1]
- *  - 低亮度线性通过（所以暗部/背景整体提亮）
- *  - 高光用软肩压缩（保留太阳/灯等细节，类似 PS 32-bit 拉曝光后的自然过渡）
- *  - compress: 0=直接裁剪（硬）, 1=完全软肩（拟合 PS 参考）
- */
-function toneMapExposure(z, compress) {
-  if (!(z > 0)) return 0;
-  const t = EXPOSURE_T;
-  let out;
-  if (z <= t) out = z;
-  else out = t + (1 - t) * (1 - Math.exp(-(z - t) / (1 - t) * EXPOSURE_K));
-  if (compress < 1) out = (1 - compress) * Math.min(z, 1) + compress * out;
-  return out;
-}
-
 /** 根据参数与目标分辨率，生成运行时 profile（半径按目标分辨率缩放） */
 function makeProfile(p, scale) {
   const clarityRadiusFull = Math.max(24, p.detailRadius * 4);
-  const exposureMode = (p.exposureEv || 0) > 0.001;
-  const F = exposureMode ? Math.pow(2, p.exposureEv) : 1;
-  const comp = (p.highlightCompress == null ? 80 : p.highlightCompress) / 100;
+  const E = Math.max(0, p.exposureEv || 0);
+  const exposureMode = E > 0.001;
+  const exposureOnly = !!(p.exposureOnly && exposureMode);
   const M = 3.0 * (p.strength / 100);
-  let K = M;
-  if (exposureMode) {
-    const zdMax = toneMapExposure(F, comp);
-    K = M + Math.log2(F / Math.max(zdMax, 1e-6)) + 0.05;
-  }
+  const F = exposureMode ? Math.pow(2, E) : 1;
+  const extraMax = exposureOnly ? 1 : Math.pow(2, M);
+  const K = exposureMode
+    ? Math.max(0.05, Math.log2((F * extraMax + OFFSET) / (1 + OFFSET)))
+    : M;
   return {
     M,
     lut: buildGainLut(p.knee, p.curvePow),
@@ -861,8 +848,9 @@ function makeProfile(p, scale) {
     radDetail: Math.max(2, Math.round(p.detailRadius * scale)),
     radClarity: Math.max(3, Math.round(clarityRadiusFull * scale)),
     exposureMode,
+    exposureOnly,
+    E,
     F,
-    comp,
     K,
   };
 }
@@ -992,12 +980,14 @@ async function buildGainMapJpeg(bitmap, gainW, gainH, profile, opts) {
           const clarityRaw = lum[q] - avgClarity[q];
           let v = gainForPixel(profile, lum[q], maxc, detailRaw, clarityRaw, r, g, b);
           if (profile.exposureMode) {
-            // 曝光模式：增益 = 高光增强(2^(M·g)) × 软肩压缩恢复量(z/zd)
+            // 整体曝光只体现在增益图里：SDR 底图字节不变。
+            // 解码端公式为 HDR = (SDR + offset) * boost - offset；这里按像素亮度做 offset 补偿，
+            // 使 HDR ≈ 原图线性 × 2^E（开启“仅整体曝光”时）或再叠加高光增强 2^(M·g)。
             const Ylin = 0.2126 * SRGB_LIN_LUT[r] + 0.7152 * SRGB_LIN_LUT[g] + 0.0722 * SRGB_LIN_LUT[b];
-            const z = Ylin * profile.F;
-            const zd = toneMapExposure(z, profile.comp);
-            const recover = zd > 1e-7 ? Math.log2(z / zd) : 0;
-            v = clamp((profile.M * v + recover) / profile.K, 0, 1);
+            const extra = profile.exposureOnly ? 1 : Math.pow(2, profile.M * v);
+            const target = Ylin * profile.F * extra;
+            const logBoost = Math.log2((target + OFFSET) / (Ylin + OFFSET));
+            v = clamp(logBoost / profile.K, 0, 1);
           }
           if (opts && opts.maskAlpha) {
             // 水印/标签/中缝区域不参与 HDR 提亮（按 mask alpha 线性清零）
@@ -1053,33 +1043,10 @@ function reinhardNorm(c, peak, boost) {
   return Math.min(1, (2 * hdr) / (hdr + peak));
 }
 
-/** 渲染左侧 SDR 底图：普通模式=原图；曝光模式=提亮后的底图（与导出的 SDR 部分一致） */
+/** 左侧 SDR 底图：始终显示原始 SDR（整体曝光只作用于 HDR，不再修改底图） */
 function renderSdrBase() {
   if (!state.bitmap) return null;
   const ctx = els.cvSdr.getContext("2d", { willReadFrequently: true });
-  const p = readParams();
-  const ev = p.exposureEv || 0;
-  if (ev > 0.001) {
-    const F = Math.pow(2, ev);
-    const comp = (p.highlightCompress == null ? 80 : p.highlightCompress) / 100;
-    const size = drawPreviewSdr(ctx, els.cvSdr, state.bitmap, PREVIEW_MAX_EDGE);
-    const w = els.cvSdr.width, h = els.cvSdr.height;
-    const img = ctx.getImageData(0, 0, w, h);
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const lr = SRGB_LIN_LUT[d[i]], lg = SRGB_LIN_LUT[d[i + 1]], lb = SRGB_LIN_LUT[d[i + 2]];
-      const Y = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
-      const z = Y * F;
-      const zd = toneMapExposure(z, comp);
-      const scale = z > 1e-7 ? zd / z : 0;
-      d[i] = linearToSrgb255(lr * F * scale);
-      d[i + 1] = linearToSrgb255(lg * F * scale);
-      d[i + 2] = linearToSrgb255(lb * F * scale);
-    }
-    ctx.putImageData(img, 0, 0);
-    els.cvHdr.width = w; els.cvHdr.height = h;
-    return size;
-  }
   const size = drawPreviewSdr(ctx, els.cvSdr, state.bitmap, PREVIEW_MAX_EDGE);
   els.cvHdr.width = els.cvSdr.width;
   els.cvHdr.height = els.cvSdr.height;
@@ -1106,7 +1073,7 @@ function renderPreview() {
   const scale = w / state.bitmap.width;
   const profile = makeProfile(params, scale);
   const M = profile.M;
-  const peak = Math.pow(2, Math.max(0.001, M));
+  const peak = Math.pow(2, Math.max(0.001, profile.K));
   const mode = els.previewMode.value;
 
   const n = w * h;
@@ -1121,11 +1088,11 @@ function renderPreview() {
   const avgClarity = boxBlurFloat(lum, w, h, profile.radClarity);
 
   const hist = new Uint32Array(HIST_BINS);
+  const hdrStops = Math.max(0.05, profile.K);
   const histR = new Uint32Array(HIST_BINS);
   const histG = new Uint32Array(HIST_BINS);
   const histB = new Uint32Array(HIST_BINS);
   const histLum = new Uint32Array(HIST_BINS);
-  const hdrStops = Math.max(0.05, M);
   let boosted = 0, boostSum = 0, boostMax = 1, nonBlack = 0, hdrPix = 0;
   const tmpCol = [0, 0, 0];
   for (let p = 0, i = 0; p < n; p++, i += 4) {
@@ -1133,7 +1100,16 @@ function renderPreview() {
     histR[r]++; histG[g]++; histB[b]++;
     histLum[clampInt(lum[p] | 0, 0, 255)]++;
     const gv = gainForPixel(profile, lum[p], maxcArr[p], lum[p] - avgDetail[p], lum[p] - avgClarity[p], r, g, b);
-    const boost = M > 1e-6 ? Math.pow(2, M * gv) : 1;
+    let boost, gNorm;
+    if (profile.exposureMode) {
+      const ylin = 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
+      const extra = profile.exposureOnly ? 1 : Math.pow(2, profile.M * gv);
+      boost = (ylin * profile.F * extra + OFFSET) / (ylin + OFFSET);
+      gNorm = clamp(Math.log2(boost) / profile.K, 0, 1);
+    } else {
+      boost = M > 1e-6 ? Math.pow(2, M * gv) : 1;
+      gNorm = gv;
+    }
     if (boost > 1.05) { boosted++; boostSum += boost; if (boost > boostMax) boostMax = boost; }
 
     const ylin = 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
@@ -1149,13 +1125,13 @@ function renderPreview() {
     }
 
     if (mode === "heatmap") {
-      heatColor(gv, tmpCol);
+      heatColor(gNorm, tmpCol);
       o[i] = tmpCol[0]; o[i + 1] = tmpCol[1]; o[i + 2] = tmpCol[2]; o[i + 3] = 255;
       continue;
     }
     if (mode === "gainmap") {
       // 增益图灰度预览：越白 = HDR 屏上提亮越多；黑色 = 不变（增益图只会提亮，没有变暗区域）
-      const gvShow = Math.pow(clamp(gv, 0, 1), 0.85);
+      const gvShow = Math.pow(clamp(gNorm, 0, 1), 0.85);
       const g8 = Math.round(gvShow * 255);
       o[i] = g8; o[i + 1] = g8; o[i + 2] = g8; o[i + 3] = 255;
       continue;
@@ -1416,8 +1392,7 @@ const els = {
   colorVal: document.getElementById("colorVal"),
   exposureEv: document.getElementById("exposureEv"),
   exposureVal: document.getElementById("exposureVal"),
-  highlightCompress: document.getElementById("highlightCompress"),
-  compressVal: document.getElementById("compressVal"),
+  exposureOnly: document.getElementById("exposureOnly"),
   sdrCaption: document.getElementById("sdrCaption"),
   curvePow: document.getElementById("curvePow"),
   curveVal: document.getElementById("curveVal"),
@@ -1584,7 +1559,7 @@ function readParams() {
     portraitStrength: parseFloat(els.portraitStrength.value),
     gainScale: parseFloat(els.gainScale.value) || 1,
     exposureEv: parseFloat(els.exposureEv.value) || 0,
-    highlightCompress: parseFloat(els.highlightCompress.value),
+    exposureOnly: !!els.exposureOnly.checked,
   };
 }
 
@@ -1600,7 +1575,7 @@ function applyParamsToInputs(p) {
   els.portraitStrength.value = p.portraitStrength;
   els.gainScale.value = String(p.gainScale);
   els.exposureEv.value = p.exposureEv == null ? 0 : p.exposureEv;
-  els.highlightCompress.value = p.highlightCompress == null ? 80 : p.highlightCompress;
+  els.exposureOnly.checked = !!p.exposureOnly;
 }
 
 function updateParamLabels() {
@@ -1616,18 +1591,44 @@ function updateParamLabels() {
   els.portraitVal.textContent = `${p.portraitStrength}%`;
   const ev = p.exposureEv || 0;
   els.exposureVal.textContent = ev > 0.001
-    ? `+${ev.toFixed(1)} EV（底图提亮）`
+    ? `+${ev.toFixed(1)} EV（仅 HDR）`
     : "0（不改变底图）";
-  els.compressVal.textContent = `${p.highlightCompress}%`;
   updateSdrCaption();
+  applyExposureOnlyUi();
   updateMobileChips();
+}
+
+/** 开启“仅整体曝光”时禁用/淡化其他参数 */
+function applyExposureOnlyUi() {
+  const ev = els.exposureEv ? (parseFloat(els.exposureEv.value) || 0) : 0;
+  const active = !!(els.exposureOnly && els.exposureOnly.checked && ev > 0.001);
+  const ids = ["strength", "knee", "detail", "color", "curvePow", "detailRadius", "clarity", "portraitStrength"];
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = active;
+    const box = el.closest(".ctl");
+    if (box) box.classList.toggle("excluded", active);
+  });
+  if (els.portrait) {
+    els.portrait.disabled = active;
+    const lab = els.portrait.closest("label") || els.portrait;
+    lab.classList.toggle("excluded", active);
+  }
+  if (els.mChips) {
+    els.mChips.querySelectorAll(".m-chip").forEach((b) => {
+      const pid = b.dataset.param;
+      const ex = active && (pid === "strength" || pid === "knee" || pid === "detail" || pid === "color" || pid === "advanced");
+      b.classList.toggle("excluded", ex);
+    });
+  }
 }
 
 function updateSdrCaption() {
   if (!els.sdrCaption) return;
   const ev = parseFloat(els.exposureEv.value) || 0;
   if (ev > 0.001) {
-    els.sdrCaption.textContent = "SDR 底图（已整体提亮）—— 普通屏 / 旧软件 / 不支持 gain map 的地方看到的就是它；HDR 屏在此基础上高光再增强";
+    els.sdrCaption.textContent = "SDR 原图（保持不变）—— 普通屏 / 旧软件看到的就是它；整体曝光只作用于 HDR 显示，不会修改底图";
   } else if (state.isPng) {
     els.sdrCaption.textContent = "SDR 底图（PNG 已转成 JPEG）—— 普通屏 / 旧软件看到的就是它；HDR 屏在此基础上高光再增强";
   } else {
@@ -1637,8 +1638,10 @@ function updateSdrCaption() {
 
 function updateHdrCaption() {
   const mode = els.previewMode.value;
-  const M = 3.0 * (parseFloat(els.strength.value) / 100);
-  const peak = Math.pow(2, Math.max(0.001, M));
+  const p = readParams();
+  const M = 3.0 * (p.strength / 100);
+  const E = Math.max(0, p.exposureEv || 0);
+  const peak = Math.pow(2, Math.max(0.001, p.exposureOnly && E > 0.001 ? E : E + M));
   if (mode === "truehdr") {
     els.captionHdr.textContent = `真 HDR 预览 —— 由浏览器原生渲染 gain map（本机 HDR：${hdrSupportText()}）。若这里和左侧 SDR 看起来一样，说明当前浏览器没有启用 HDR 图片渲染：macOS 上请用 Safari 打开本页，或直接看导出的 JPG。最终质量/水印请在「成品预览」或导出文件里确认。`;
   } else if (mode === "gainmap") {
@@ -1680,8 +1683,9 @@ function updateMetaText(previewDims, outSize) {
     `当前参数：起点 ${p.knee} · 细节 ${p.detail}% · 彩色 ${p.color}% · 曲线 ${p.curvePow.toFixed(2)} · 细节尺度 ${p.detailRadius}px · 通透 ${p.clarity}%${p.portrait ? " · 人像保护 " + p.portraitStrength + "%" : ""}`,
   ];
   if ((p.exposureEv || 0) > 0.001) {
-    lines.push(`整体曝光：<b>+${p.exposureEv.toFixed(1)} EV</b> · 高光柔化 ${p.highlightCompress}%`);
-    lines.push(`⚠ 曝光模式：SDR 底图已重新编码（原图字节不再逐字节保留；EXIF/ICC 尽量保留）`);
+    lines.push(`整体曝光：<b>+${p.exposureEv.toFixed(1)} EV（仅作用于 HDR）</b>` +
+      (p.exposureOnly ? " · <b>仅整体曝光（其他参数已忽略）</b>" : ""));
+    lines.push(`SDR 底图：<b>保持原样</b>（字节不变，普通屏看到的就是原图）`);
   }
   if (p.gainScale >= 1 && px > 60e6) {
     lines.push(`⚠ 超大图（${(px / 1e6).toFixed(0)} MP）用全分辨率增益图内存占用较高，建议切「半分辨率」`);
@@ -1703,7 +1707,7 @@ function schedulePreview() {
     if (!state.bitmap) return;
     updateParamLabels();
     const _p = readParams();
-    const _key = `${((_p.exposureEv || 0).toFixed(2))}|${_p.highlightCompress}`;
+    const _key = `${((_p.exposureEv || 0).toFixed(2))}|${_p.exposureOnly ? "only" : "mix"}`;
     if (state.sdrBaseKey !== _key) {
       state.sdrBaseKey = _key;
       if (!state.bigPreviewOpen) renderSdrBase();
@@ -2034,7 +2038,7 @@ function watermarkEffective(wm, logoBitmap) {
 
 function needReencodeForExport(params, opts) {
   const logo = (opts && (opts.logoBitmap || state.wmLogoBitmap)) || state.wmLogoBitmap;
-  return !!(opts && opts.outputMode === "compare") || !!(params.exposureEv > 0.001) || !!state.isPng ||
+  return !!(opts && opts.outputMode === "compare") || !!state.isPng ||
     watermarkEffective(opts && opts.watermark, logo);
 }
 
@@ -2122,36 +2126,7 @@ async function buildBaseCanvas(bitmap, params, opts) {
   const baseCanvas = document.createElement("canvas");
   baseCanvas.width = w; baseCanvas.height = h;
   const bctx = baseCanvas.getContext("2d", { willReadFrequently: true });
-  if (!opts.applyExposure) {
-    bctx.drawImage(bitmap, 0, 0);
-  } else {
-    const F = Math.pow(2, params.exposureEv || 0);
-    const comp = (params.highlightCompress == null ? 80 : params.highlightCompress) / 100;
-    const tileCanvas = document.createElement("canvas");
-    const tctx = tileCanvas.getContext("2d", { willReadFrequently: true });
-    const TILE = 512;
-    for (let ty = 0; ty < h; ty += TILE) {
-      for (let tx = 0; tx < w; tx += TILE) {
-        const tw = Math.min(TILE, w - tx), th = Math.min(TILE, h - ty);
-        tileCanvas.width = tw; tileCanvas.height = th;
-        tctx.clearRect(0, 0, tw, th);
-        tctx.drawImage(bitmap, tx, ty, tw, th, 0, 0, tw, th);
-        const img = tctx.getImageData(0, 0, tw, th);
-        const d = img.data;
-        for (let i = 0; i < d.length; i += 4) {
-          const lr = SRGB_LIN_LUT[d[i]], lg = SRGB_LIN_LUT[d[i + 1]], lb = SRGB_LIN_LUT[d[i + 2]];
-          const Y = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
-          const z = Y * F;
-          const zd = toneMapExposure(z, comp);
-          const scale = z > 1e-7 ? zd / z : 0;
-          d[i] = linearToSrgb255(lr * F * scale);
-          d[i + 1] = linearToSrgb255(lg * F * scale);
-          d[i + 2] = linearToSrgb255(lb * F * scale);
-        }
-        bctx.putImageData(img, tx, ty);
-      }
-    }
-  }
+  bctx.drawImage(bitmap, 0, 0);
   if (opts.watermark && opts.watermark.type !== "none") {
     drawWatermark(bctx, w, h, opts.watermark, opts.logoBitmap, false);
   }
@@ -2210,7 +2185,7 @@ async function buildCompareOutputBytes(bitmap, originalBytes, params, orientatio
   const gh = Math.max(1, Math.round(h * gainScale));
 
   // 1) SDR 底图（曝光/PNG 模式可能重编码；拼图时暂时不加水印，水印加在拼图成品上）
-  const baseCanvas = await buildBaseCanvas(bitmap, params, { applyExposure: profile.exposureMode, watermark: null, logoBitmap: null });
+  const baseCanvas = await buildBaseCanvas(bitmap, params, { watermark: null, logoBitmap: null });
 
   // 2) 拼图底图（两半都是 SDR 画面 + 中缝 + 标签 + 水印）
   const canvas = document.createElement("canvas");
@@ -2302,7 +2277,7 @@ async function buildOutputBytesGeneric(bitmap, originalBytes, params, orientatio
   }
   const wm = exportOpts.watermark || { type: "none" };
   const wmActive = watermarkEffective(wm, exportOpts.logoBitmap || state.wmLogoBitmap);
-  const needReencode = profile.exposureMode || !!inputIsPng || wmActive;
+  const needReencode = !!inputIsPng || wmActive;
   let baseBytes = originalBytes;
   let meta;
   let maskAlpha = null;
@@ -2310,7 +2285,6 @@ async function buildOutputBytesGeneric(bitmap, originalBytes, params, orientatio
   if (needReencode) {
     reencoded = true;
     const baseCanvas = await buildBaseCanvas(bitmap, params, {
-      applyExposure: profile.exposureMode,
       watermark: wmActive ? wm : null,
       logoBitmap: exportOpts.logoBitmap || state.wmLogoBitmap,
     });
@@ -2324,7 +2298,7 @@ async function buildOutputBytesGeneric(bitmap, originalBytes, params, orientatio
       maskAlpha = buildWatermarkMaskAlpha(w0, h0, wm, exportOpts.logoBitmap || state.wmLogoBitmap, gw, gh);
     }
   } else {
-    meta = makeMeta(params.strength);
+    meta = profile.exposureMode ? makeMeta(params.strength, profile.K) : makeMeta(params.strength);
   }
   const gainMapJpeg = await buildGainMapJpeg(bitmap, gw, gh, profile, { maskAlpha });
   return {
@@ -2416,7 +2390,6 @@ function updateExportInfo() {
   let baseMode;
   if (!needRe) baseMode = "原图直通（字节保留）";
   else if (isCompare) baseMode = "重编码（SDR/HDR 拼图）";
-  else if (params.exposureEv > 0.001) baseMode = "重编码（整体曝光）";
   else if (state.isPng) baseMode = "重编码（PNG → JPEG）";
   else baseMode = "重编码（加水印）";
   const outName = downloadFileName(opts);
@@ -2433,13 +2406,13 @@ function updateExportInfo() {
     `增益图：<b>${isCompare ? "下半区" : gw + "×" + gh}</b>${isCompare ? "" : "（" + ((params.gainScale || 1) * 100).toFixed(0) + "%）"}`,
   ];
   if (isCompare) lines.push(`拼图：<b>${opts.compare.order === "hdr-top" ? "HDR 上 / SDR 下" : "SDR 上 / HDR 下"}</b> · 中缝 ${Math.round(opts.compare.gap)}px · ${opts.compare.labels ? "有标签" : "无标签"}`);
-  if (params.exposureEv > 0.001) lines.push(`整体曝光：<b>+${params.exposureEv.toFixed(1)} EV</b>`);
+  if (params.exposureEv > 0.001) lines.push(`整体曝光：<b>+${params.exposureEv.toFixed(1)} EV（仅 HDR）</b>` + (params.exposureOnly ? " · <b>仅整体曝光</b>" : ""));
   if (wmType === "image" && !state.wmLogoBitmap) lines.push(`<span style="color:var(--warn)">⚠ 请先选择 Logo 图片</span>`);
   if (wmType === "text" && !(opts.watermark.text || "").trim()) lines.push(`<span style="color:var(--warn)">⚠ 请输入水印文字</span>`);
   els.exportInfo.innerHTML = lines.join("<br>");
   els.qualityHint.textContent = needRe
     ? "当前会重编码底图，质量滑块生效。"
-    : "普通 JPG 直通时质量由原图决定；加水印/曝光/PNG 时生效。";
+    : "普通 JPG 直通时质量由原图决定；加水印 / PNG / 对比拼图时生效。";
   els.exportQuality.disabled = !needRe || state.busy;
   els.exportHeadInfo.textContent = outName;
   els.exportStart.disabled = state.busy ||
@@ -2542,8 +2515,8 @@ async function exportHdr() {
   if (!state.bitmap || state.busy) return;
   const params = readParams();
   const opts = readExportOpts();
-  if (params.strength <= 0) {
-    setExportStatus("强度为 0：结果与原图完全相同，无需导出。请把强度调大。", true);
+  if (params.strength <= 0 && (params.exposureEv || 0) <= 0.001) {
+    setExportStatus("强度为 0：结果与原图完全相同，无需导出。请把强度或整体曝光调大。", true);
     return;
   }
   if (opts.watermark.type === "image" && !state.wmLogoBitmap) {
@@ -2617,7 +2590,7 @@ const PARAM_TIPS = {
   curvePow: "<b>过渡曲线</b><br>从提亮起点到纯白的过渡陡缓。数值大→过渡更硬、边缘更明显；数值小→更柔和。",
   detailRadius: "<b>细节尺度</b><br>多小的结构算“小细节”。调小→只提亮很小的结构；调大→更大范围参与。",
   clarity: "<b>通透感</b><br>大范围明暗层次/局部对比。调高→画面更通透有层次，过高可能显得生硬。",
-  highlightCompress: "<b>高光柔化</b><br>整体曝光模式下的高光滚降。0% = 直接裁剪（硬）；80% ≈ PS 拉曝光的自然过渡；100% 压缩最强。",
+  exposureOnly: "<b>仅整体曝光</b><br>开启后忽略强度/起点/细节等其他参数，只按整体曝光做一个均匀的 HDR 提亮（SDR 底图完全不变）。",
   portraitStrength: "<b>人像保护强度</b><br>肤色区域降低提亮的力度。调高→脸部更不容易过亮。",
   portrait: "<b>人像保护</b><br>自动检测肤色区域并降低提亮，避免人像脸部/皮肤过亮。",
   showAssist: "<b>显示 HDR 辅助</b><br>显示/隐藏模拟预览与直方图。",
@@ -2745,14 +2718,12 @@ const MOBILE_VALUE_FORMAT = {
   curvePow: (v) => Number(v).toFixed(2),
   detailRadius: (v) => Number(v) + "px",
   clarity: (v) => Number(v) + "%",
-  highlightCompress: (v) => Number(v) + "%",
   portraitStrength: (v) => Number(v) + "%",
 };
 const MOBILE_ADVANCED = [
   { id: "curvePow", label: "过渡曲线", fmt: (v) => Number(v).toFixed(2) },
   { id: "detailRadius", label: "细节尺度", fmt: (v) => v + "px" },
   { id: "clarity", label: "通透感", fmt: (v) => v + "%" },
-  { id: "highlightCompress", label: "高光柔化", fmt: (v) => v + "%" },
   { id: "portraitStrength", label: "人像保护", fmt: (v) => v + "%" },
 ];
 
@@ -2828,6 +2799,7 @@ function mobileRangeRow(desktopId, label, fmt) {
   inp.type = "range";
   inp.min = src.min; inp.max = src.max; inp.step = src.step;
   inp.value = src.value;
+  inp.disabled = !!src.disabled;
   const val = document.createElement("span");
   val.className = "m-val";
   val.textContent = valueFmt(src.value);
@@ -2886,6 +2858,26 @@ function toggleMobileSheet(paramId) {
   } else if (def) {
     const row = mobileRangeRow(def.id, def.label, def.fmt);
     if (row) els.mSheet.appendChild(row);
+    if (def.id === "exposureEv") {
+      const onlyRow = document.createElement("div");
+      onlyRow.className = "m-row";
+      const lab = document.createElement("label");
+      lab.textContent = "仅整体曝光";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = els.exposureOnly.checked;
+      cb.addEventListener("change", () => {
+        els.exposureOnly.checked = cb.checked;
+        els.exposureOnly.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      const hint = document.createElement("span");
+      hint.className = "m-val";
+      hint.style.flex = "1";
+      hint.style.textAlign = "left";
+      hint.textContent = "忽略其他参数";
+      onlyRow.appendChild(lab); onlyRow.appendChild(cb); onlyRow.appendChild(hint);
+      els.mSheet.appendChild(onlyRow);
+    }
   }
   els.mSheet.classList.remove("hidden");
   updateMobileChips();
@@ -2915,11 +2907,12 @@ function bindUi() {
 
   const sliders = [els.strength, els.knee, els.detail, els.color, els.curvePow,
                    els.detailRadius, els.clarity, els.portraitStrength,
-                   els.exposureEv, els.highlightCompress];
+                   els.exposureEv];
   sliders.forEach((inp) => {
     inp.addEventListener("input", () => { updateParamLabels(); schedulePreview(); });
   });
   els.portrait.addEventListener("change", () => { updateParamLabels(); schedulePreview(); });
+  els.exposureOnly.addEventListener("change", () => { updateParamLabels(); schedulePreview(); });
   els.gainScale.addEventListener("change", () => {
     updateParamLabels();
     if (state.bitmap) updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
@@ -3031,7 +3024,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.13",
+  version: "0.14",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
