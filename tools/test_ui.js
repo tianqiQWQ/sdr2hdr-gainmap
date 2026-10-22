@@ -284,7 +284,25 @@ const SHOTS = path.join(ROOT, "tests");
   }));
   console.log("compare UI:", JSON.stringify(cmpUi));
   if (!cmpUi.fields || cmpUi.qualityDisabled || !cmpUi.name.includes("SDR-HDR")) errors.push("compare UI wrong");
-  await shot("ui_v13_export_compare.png");
+
+  // SDR/HDR 标签位置 + 大小
+  await page.select("#compareLabelPos", "tr");
+  await page.evaluate(() => {
+    const el = document.getElementById("compareLabelSize");
+    el.value = "5";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await new Promise((r) => setTimeout(r, 400));
+  const labelUi = await page.evaluate(() => ({
+    pos: document.getElementById("compareLabelPos").value,
+    size: document.getElementById("compareLabelSizeVal").textContent,
+    info: document.getElementById("exportInfo").innerText.replace(/\s+/g, " "),
+  }));
+  console.log("compare label UI:", JSON.stringify({ pos: labelUi.pos, size: labelUi.size, infoHas: labelUi.info.includes("标签 右上 · 5%") }));
+  if (labelUi.pos !== "tr" || labelUi.size !== "5%" || !labelUi.info.includes("标签 右上 · 5%")) {
+    errors.push("compare label position/size controls wrong");
+  }
+  await shot("ui_v14_compare_labels.png");
   await page.click("#exportStart");
   await page.waitForFunction('document.getElementById("exportStatus").textContent.indexOf("完成") >= 0', { timeout: 120000 });
   await new Promise((r) => setTimeout(r, 1500));

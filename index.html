@@ -403,6 +403,12 @@
           </select></div>
           <div class="field range"><label for="compareGap">中缝</label><input type="range" id="compareGap" min="0" max="16" step="1" value="8"><span class="val" id="compareGapVal">8px</span></div>
           <div class="field"><label>标签</label><label class="chk"><input type="checkbox" id="compareLabels" checked> 显示 SDR / HDR 文字</label></div>
+          <div class="field"><label for="compareLabelPos">标签位置</label><select id="compareLabelPos">
+            <option value="tl">左上</option><option value="tc">上中</option><option value="tr">右上</option>
+            <option value="ml">左中</option><option value="mc">居中</option><option value="mr">右中</option>
+            <option value="bl" selected>左下</option><option value="bc">下中</option><option value="br">右下</option>
+          </select></div>
+          <div class="field range"><label for="compareLabelSize">标签大小</label><input type="range" id="compareLabelSize" min="1" max="10" step="0.5" value="3"><span class="val" id="compareLabelSizeVal">3%</span></div>
           <div class="field"><label for="compareSize">输出尺寸</label><select id="compareSize">
             <option value="social" selected>社交尺寸（长边 ≤4096）</option>
             <option value="original">原分辨率（长边 ≤8192）</option>
@@ -1456,6 +1462,9 @@ const els = {
   compareGap: document.getElementById("compareGap"),
   compareGapVal: document.getElementById("compareGapVal"),
   compareLabels: document.getElementById("compareLabels"),
+  compareLabelPos: document.getElementById("compareLabelPos"),
+  compareLabelSize: document.getElementById("compareLabelSize"),
+  compareLabelSizeVal: document.getElementById("compareLabelSizeVal"),
   compareSize: document.getElementById("compareSize"),
   wmOpacity: document.getElementById("wmOpacity"),
   wmOpacityVal: document.getElementById("wmOpacityVal"),
@@ -2017,6 +2026,8 @@ function readExportOpts() {
     order: els.compareOrder ? els.compareOrder.value : "sdr-top",
     gap: clamp(num(els.compareGap, 8), 0, 16),
     labels: els.compareLabels ? els.compareLabels.checked : true,
+    labelPos: els.compareLabelPos ? els.compareLabelPos.value : "bl",
+    labelSizePct: clamp(num(els.compareLabelSize, 3), 1, 10),
     size: els.compareSize ? els.compareSize.value : "social",
   };
   return {
@@ -2151,25 +2162,38 @@ function compareOutputDims(w, h, opts) {
   return { scale, W: outW, halfH, gap: gap2, H: halfH * 2 + gap2, maxLong };
 }
 
-/** 在对比拼图上绘制 SDR / HDR 标签（maskOnly 时白色用于清零蒙版） */
-function drawCompareLabels(ctx, W, halfH, gap, order, maskOnly) {
+/** 在对比拼图上绘制 SDR / HDR 标签（位置/大小可调；maskOnly 时白色用于清零蒙版） */
+function drawCompareLabels(ctx, W, halfH, gap, order, maskOnly, compare) {
   const sdrTop = (order || "sdr-top") === "sdr-top";
   const labels = sdrTop ? ["SDR", "HDR"] : ["HDR", "SDR"];
-  const size = Math.max(14, Math.round(Math.min(W, halfH) * 0.03));
+  const cmp = compare || {};
+  const pos = cmp.labelPos || "bl";
+  const sizePct = clamp((cmp.labelSizePct == null ? 3 : cmp.labelSizePct) / 100, 0.01, 0.15);
+  const size = Math.max(10, Math.round(Math.min(W, halfH) * sizePct));
   const margin = Math.max(8, Math.round(Math.min(W, halfH) * 0.024));
+  const vert = pos[0], horiz = pos[1];
   const tops = [0, halfH + gap];
   ctx.save();
   ctx.font = `700 ${size}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   for (let i = 0; i < labels.length; i++) {
+    const tw = ctx.measureText(labels[i]).width;
+    let x;
+    if (horiz === "l") x = margin;
+    else if (horiz === "r") x = W - margin - tw;
+    else x = (W - tw) / 2;
+    let y;
+    if (vert === "t") y = tops[i] + margin + size * 0.85;
+    else if (vert === "b") y = tops[i] + halfH - margin;
+    else y = tops[i] + halfH / 2 + size * 0.3;
     ctx.fillStyle = maskOnly ? "#ffffff" : "rgba(255,255,255,0.92)";
     if (!maskOnly) {
       ctx.shadowColor = "rgba(0,0,0,0.55)";
       ctx.shadowBlur = Math.max(3, size * 0.35);
       ctx.shadowOffsetY = Math.max(1, size * 0.06);
     }
-    ctx.fillText(labels[i], margin, tops[i] + halfH - margin);
+    ctx.fillText(labels[i], x, y);
   }
   ctx.restore();
 }
@@ -2198,7 +2222,7 @@ async function buildCompareOutputBytes(bitmap, originalBytes, params, orientatio
   ctx.drawImage(baseCanvas, 0, 0, w, h, 0, topY, dims.W, dims.halfH);
   ctx.drawImage(baseCanvas, 0, 0, w, h, 0, botY, dims.W, dims.halfH);
   if (!opts.compare || opts.compare.labels !== false) {
-    drawCompareLabels(ctx, dims.W, dims.halfH, dims.gap, order, false);
+    drawCompareLabels(ctx, dims.W, dims.halfH, dims.gap, order, false, opts.compare);
   }
   const wm = opts.watermark || { type: "none" };
   const logo = opts.logoBitmap || state.wmLogoBitmap;
@@ -2235,7 +2259,7 @@ async function buildCompareOutputBytes(bitmap, originalBytes, params, orientatio
     mctx.fillRect(0, dims.halfH, dims.W, dims.gap);
   }
   if (!opts.compare || opts.compare.labels !== false) {
-    drawCompareLabels(mctx, dims.W, dims.halfH, dims.gap, order, true);
+    drawCompareLabels(mctx, dims.W, dims.halfH, dims.gap, order, true, opts.compare);
   }
   if (watermarkEffective(wm, logo)) drawWatermark(mctx, dims.W, dims.H, wm, logo, true);
 
@@ -2355,6 +2379,7 @@ function updateExportLabels() {
   if (els.wmMarginVal) els.wmMarginVal.textContent = (opts.watermark.marginPct || 0) + "%";
   if (els.wmOpacityVal) els.wmOpacityVal.textContent = Math.round((opts.watermark.opacity == null ? 0.7 : opts.watermark.opacity) * 100) + "%";
   if (els.compareGapVal) els.compareGapVal.textContent = Math.round(opts.compare.gap) + "px";
+  if (els.compareLabelSizeVal) els.compareLabelSizeVal.textContent = (opts.compare.labelSizePct || 3) + "%";
 }
 
 function updateWatermarkUi() {
@@ -2405,7 +2430,11 @@ function updateExportInfo() {
     `水印：<b>${wmText}</b>`,
     `增益图：<b>${isCompare ? "下半区" : gw + "×" + gh}</b>${isCompare ? "" : "（" + ((params.gainScale || 1) * 100).toFixed(0) + "%）"}`,
   ];
-  if (isCompare) lines.push(`拼图：<b>${opts.compare.order === "hdr-top" ? "HDR 上 / SDR 下" : "SDR 上 / HDR 下"}</b> · 中缝 ${Math.round(opts.compare.gap)}px · ${opts.compare.labels ? "有标签" : "无标签"}`);
+  if (isCompare) {
+    const posNames = { tl: "左上", tc: "上中", tr: "右上", ml: "左中", mc: "居中", mr: "右中", bl: "左下", bc: "下中", br: "右下" };
+    lines.push(`拼图：<b>${opts.compare.order === "hdr-top" ? "HDR 上 / SDR 下" : "SDR 上 / HDR 下"}</b> · 中缝 ${Math.round(opts.compare.gap)}px · ` +
+      (opts.compare.labels ? `标签 ${posNames[opts.compare.labelPos] || "左下"} · ${opts.compare.labelSizePct}%` : "无标签"));
+  }
   if (params.exposureEv > 0.001) lines.push(`整体曝光：<b>+${params.exposureEv.toFixed(1)} EV（仅 HDR）</b>` + (params.exposureOnly ? " · <b>仅整体曝光</b>" : ""));
   if (wmType === "image" && !state.wmLogoBitmap) lines.push(`<span style="color:var(--warn)">⚠ 请先选择 Logo 图片</span>`);
   if (wmType === "text" && !(opts.watermark.text || "").trim()) lines.push(`<span style="color:var(--warn)">⚠ 请输入水印文字</span>`);
@@ -2980,8 +3009,9 @@ function bindUi() {
   [els.exportQuality, els.wmFontSize, els.wmLogoScale, els.wmMargin, els.wmOpacity]
     .forEach((el) => { if (el) el.addEventListener("input", onExportOptsChanged); });
   [els.wmType, els.wmPosition].forEach((el) => { if (el) el.addEventListener("change", onExportOptsChanged); });
-  [els.outputMode, els.compareOrder, els.compareSize].forEach((el) => { if (el) el.addEventListener("change", onExportOptsChanged); });
+  [els.outputMode, els.compareOrder, els.compareSize, els.compareLabelPos].forEach((el) => { if (el) el.addEventListener("change", onExportOptsChanged); });
   if (els.compareGap) els.compareGap.addEventListener("input", onExportOptsChanged);
+  if (els.compareLabelSize) els.compareLabelSize.addEventListener("input", onExportOptsChanged);
   if (els.compareLabels) els.compareLabels.addEventListener("change", onExportOptsChanged);
   if (els.wmText) els.wmText.addEventListener("input", onExportOptsChanged);
   if (els.wmColor) els.wmColor.addEventListener("input", onExportOptsChanged);
