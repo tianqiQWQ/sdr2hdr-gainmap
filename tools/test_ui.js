@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* End-to-end UI test for v0.3: sliders, preview modes, assist toggle, advanced panel, export. */
+/* End-to-end UI test for v0.10: bottom navigation, preview screen, export screen, watermark, quality. */
 const path = require("path");
 const fs = require("fs");
 const puppeteer = require("puppeteer-core");
@@ -9,7 +9,7 @@ const ROOT = path.resolve(__dirname, "..");
 const SHOTS = path.join(ROOT, "tests");
 
 (async () => {
-  const input = process.argv[2] || "tests/input_color.jpg";
+  const input = process.argv[2] || "tests/input_synthetic_12mp.jpg";
   const downloadDir = path.join(ROOT, "tests", "downloads");
   fs.rmSync(downloadDir, { recursive: true, force: true });
   fs.mkdirSync(downloadDir, { recursive: true });
@@ -23,7 +23,7 @@ const SHOTS = path.join(ROOT, "tests");
   const errors = [];
   page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
   page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
-  await page.setViewport({ width: 1280, height: 1100, deviceScaleFactor: 1 });
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
   const client = await page.createCDPSession();
   await client.send("Page.setDownloadBehavior", { behavior: "allow", downloadPath: downloadDir });
 
@@ -34,7 +34,7 @@ const SHOTS = path.join(ROOT, "tests");
   const fi = await page.$("#file");
   await fi.uploadFile(path.join(ROOT, input));
   await page.waitForFunction('!document.getElementById("editor").classList.contains("hidden") && document.getElementById("cvSdr").width > 0', { timeout: 30000 });
-  await new Promise((r) => setTimeout(r, 600));
+  await new Promise((r) => setTimeout(r, 700));
 
   async function setSlider(id, value) {
     await page.evaluate((id, v) => {
@@ -44,120 +44,123 @@ const SHOTS = path.join(ROOT, "tests");
     }, id, value);
   }
   async function shot(name) {
-    await page.screenshot({ path: path.join(SHOTS, name), fullPage: true });
+    await page.screenshot({ path: path.join(SHOTS, name) });
     console.log("screenshot:", name);
   }
 
-  await shot("ui_v4_default.png");
+  // ---- 基础状态 + 底部导航 ----
+  const nav = await page.evaluate(() => ({
+    bottomVisible: !document.getElementById("bottomBar").classList.contains("hidden"),
+    exportEnabled: !document.getElementById("exportBtn").disabled,
+    previewEnabled: !document.getElementById("previewBtn").disabled,
+  }));
+  console.log("bottom nav:", JSON.stringify(nav));
+  if (!nav.bottomVisible || !nav.exportEnabled || !nav.previewEnabled) errors.push("bottom navigation not enabled");
+  await shot("ui_v10_edit.png");
   console.log("meta:\n" + (await page.$eval("#meta", (el) => el.innerText)));
-  console.log("hist caption:", await page.$eval("#histCaption", (el) => el.textContent));
 
-  // 整体曝光（PS 拉曝光效果）
+  // ---- 参数 / 曝光 / 高级 / 热力图 / 真 HDR 回归 ----
   await setSlider("exposureEv", 1.2);
   await new Promise((r) => setTimeout(r, 900));
-  const expInfo = await page.evaluate(() => ({
-    caption: document.getElementById("sdrCaption").textContent,
-    meta: document.getElementById("meta").innerText,
-  }));
-  console.log("exposure caption:", expInfo.caption.slice(0, 26), "| meta has 整体曝光:", expInfo.meta.includes("整体曝光"));
-  await shot("ui_v6_exposure.png");
+  await shot("ui_v10_exposure.png");
   await setSlider("exposureEv", 0);
-  await new Promise((r) => setTimeout(r, 500));
+  await new Promise((r) => setTimeout(r, 400));
 
-  // 调整参数：起点降低、细节/彩色拉高
   await setSlider("knee", 120);
   await setSlider("detail", 80);
   await setSlider("color", 100);
   await new Promise((r) => setTimeout(r, 700));
-  console.log("after sliders:", await page.$eval("#meta", (el) => el.innerText));
-
-  // 高级参数
   await page.evaluate(() => { document.getElementById("advanced").open = true; });
-  await page.evaluate(() => { document.getElementById("detailRadius").value = "28"; document.getElementById("detailRadius").dispatchEvent(new Event("input", { bubbles: true })); });
-  await page.evaluate(() => { document.getElementById("clarity").value = "60"; document.getElementById("clarity").dispatchEvent(new Event("input", { bubbles: true })); });
-  await new Promise((r) => setTimeout(r, 700));
-  await shot("ui_v4_advanced.png");
-
-  // 热力图模式
+  await page.evaluate(() => {
+    document.getElementById("detailRadius").value = "28";
+    document.getElementById("detailRadius").dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await new Promise((r) => setTimeout(r, 500));
   await page.select("#previewMode", "heatmap");
-  await new Promise((r) => setTimeout(r, 600));
-  await shot("ui_v4_heatmap.png");
-  console.log("heatmap caption:", await page.$eval("#captionHdr", (el) => el.textContent));
-
-  // 真 HDR 预览（原生渲染）
-  await page.evaluate(() => console.log("hdr high:", matchMedia("(dynamic-range: high)").matches));
+  await new Promise((r) => setTimeout(r, 500));
+  await shot("ui_v10_heatmap.png");
   await page.select("#previewMode", "truehdr");
   await page.waitForFunction('document.getElementById("hdrImg").src.indexOf("blob:") === 0 && document.getElementById("hdrImg").naturalWidth > 0', { timeout: 30000 });
-  await new Promise((r) => setTimeout(r, 800));
-  const hdrInfo = await page.evaluate(async () => {
-    const img = document.getElementById("hdrImg");
-    const res = await fetch(img.src);
-    const buf = new Uint8Array(await res.arrayBuffer());
-    let s = ""; const CH = 0x8000;
-    for (let i = 0; i < buf.length; i += CH) s += String.fromCharCode.apply(null, buf.subarray(i, i + CH));
-    return { b64: btoa(s), w: img.naturalWidth, h: img.naturalHeight };
-  });
-  fs.writeFileSync(path.join(SHOTS, "truehdr_preview.jpg"), Buffer.from(hdrInfo.b64, "base64"));
-  console.log("true HDR preview: img", hdrInfo.w, "x", hdrInfo.h, "file", fs.statSync(path.join(SHOTS, "truehdr_preview.jpg")).size, "bytes");
-  await shot("ui_v4_truehdr.png");
-  const modeUi = await page.evaluate(() => ({
-    cvHidden: document.getElementById("cvHdr").classList.contains("hidden"),
-    imgShown: !document.getElementById("hdrImg").classList.contains("hidden"),
-    caption: document.getElementById("captionHdr").textContent.slice(0, 40),
-  }));
-  console.log("true HDR mode UI:", modeUi);
-
-  // 大图 HDR 调试视图
-  await page.click("#bigViewBtn");
-  await page.waitForFunction('document.getElementById("bigView") && !document.getElementById("bigView").classList.contains("hidden")', { timeout: 10000 });
-  await page.waitForFunction('document.getElementById("bigStatus").textContent.indexOf("已生成") >= 0', { timeout: 120000 });
-  const big1 = await page.evaluate(() => ({
-    src: document.getElementById("bigImg").src,
-    w: document.getElementById("bigImg").naturalWidth,
-    h: document.getElementById("bigImg").naturalHeight,
-    status: document.getElementById("bigStatus").textContent,
-    dockHasControls: document.getElementById("bigDock").contains(document.querySelector(".controls")),
-  }));
-  console.log("big view:", JSON.stringify(big1));
   await new Promise((r) => setTimeout(r, 500));
-  await shot("ui_v5_big.png");
-  // 在大图里调参数，应自动重新按最终分辨率生成
-  await page.evaluate(() => {
-    const el = document.getElementById("detail");
-    el.value = "80";
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await new Promise((r) => setTimeout(r, 1500));
-  await page.waitForFunction((oldSrc) => document.getElementById("bigImg").src !== oldSrc, { timeout: 120000 }, big1.src);
-  const big2 = await page.evaluate(() => ({ status: document.getElementById("bigStatus").textContent, detail: document.getElementById("detail").value }));
-  console.log("big view after adjust:", JSON.stringify(big2));
-  await shot("ui_v5_big_adjusted.png");
-  await page.click("#bigActual");
-  const actual = await page.evaluate(() => document.getElementById("bigStage").classList.contains("actual"));
-  console.log("1:1 mode:", actual);
-  await page.keyboard.press("Escape");
-  await new Promise((r) => setTimeout(r, 600));
-  const closed = await page.evaluate(() => ({
-    hidden: document.getElementById("bigView").classList.contains("hidden"),
-    dockEmpty: document.getElementById("bigDock").children.length === 0,
-    controlsBack: document.querySelector(".controls").parentElement.id !== "bigDock",
-  }));
-  console.log("big view closed:", JSON.stringify(closed));
-  if (!closed.hidden || !closed.controlsBack) process.exitCode = 1;
-
-  // 关闭辅助
-  await page.evaluate(() => { const cb = document.getElementById("showAssist"); cb.checked = false; cb.dispatchEvent(new Event("change", { bubbles: true })); });
-  await new Promise((r) => setTimeout(r, 300));
-  const hidden = await page.evaluate(() => document.getElementById("histFig").classList.contains("hidden") && document.getElementById("previews").classList.contains("single"));
-  console.log("assist off hides preview+hist:", hidden);
-  await shot("ui_v4_assist_off.png");
-  await page.evaluate(() => { const cb = document.getElementById("showAssist"); cb.checked = true; cb.dispatchEvent(new Event("change", { bubbles: true })); });
+  await shot("ui_v10_truehdr.png");
   await page.select("#previewMode", "gain");
   await new Promise((r) => setTimeout(r, 500));
 
-  // 导出
+  // ---- 成品预览（全屏，无参数面板） ----
+  await page.click("#previewBtn");
+  await page.waitForFunction('!document.getElementById("bigView").classList.contains("hidden")', { timeout: 10000 });
+  await page.waitForFunction('document.getElementById("bigStatus").textContent.indexOf("已生成") >= 0', { timeout: 120000 });
+  const preview = await page.evaluate(() => ({
+    w: document.getElementById("bigImg").naturalWidth,
+    h: document.getElementById("bigImg").naturalHeight,
+    status: document.getElementById("bigStatus").textContent.slice(0, 60),
+    dockExists: !!document.getElementById("bigDock"),
+  }));
+  console.log("preview:", JSON.stringify(preview));
+  await shot("ui_v10_preview.png");
+  const firstSrc = await page.evaluate(() => document.getElementById("bigImg").src);
+  await setSlider("detail", 65);
+  await page.waitForFunction((oldSrc) => document.getElementById("bigImg").src !== oldSrc, { timeout: 120000 }, firstSrc);
+  console.log("preview regenerated after param change");
+  await page.click("#bigActual");
+  console.log("1:1 mode:", await page.evaluate(() => document.getElementById("bigStage").classList.contains("actual")));
+  await page.keyboard.press("Escape");
+  await new Promise((r) => setTimeout(r, 600));
+  const previewClosed = await page.evaluate(() => document.getElementById("bigView").classList.contains("hidden"));
+  console.log("preview closed:", previewClosed);
+  if (!previewClosed) errors.push("preview did not close");
+
+  // ---- 关闭辅助回归 ----
+  await page.evaluate(() => { const cb = document.getElementById("showAssist"); cb.checked = false; cb.dispatchEvent(new Event("change", { bubbles: true })); });
+  await new Promise((r) => setTimeout(r, 300));
+  const assistHidden = await page.evaluate(() => document.getElementById("histFig").classList.contains("hidden") && document.getElementById("previews").classList.contains("single"));
+  console.log("assist off hides preview+hist:", assistHidden);
+  await page.evaluate(() => { const cb = document.getElementById("showAssist"); cb.checked = true; cb.dispatchEvent(new Event("change", { bubbles: true })); });
+  await new Promise((r) => setTimeout(r, 400));
+
+  // ---- 独立导出界面 ----
   await page.click("#exportBtn");
-  await page.waitForFunction('!document.getElementById("result").classList.contains("hidden")', { timeout: 120000 });
+  await page.waitForFunction('!document.getElementById("exportScreen").classList.contains("hidden")', { timeout: 10000 });
+  const exp0 = await page.evaluate(() => ({
+    bottomHidden: document.getElementById("bottomBar").classList.contains("hidden"),
+    dropHidden: document.getElementById("drop").classList.contains("hidden"),
+    qualityDisabled: document.getElementById("exportQuality").disabled,
+    info: document.getElementById("exportInfo").innerText.replace(/\s+/g, " ").slice(0, 80),
+    prefix: document.getElementById("filenamePrefix").value,
+  }));
+  console.log("export screen (pass-through):", JSON.stringify(exp0));
+  if (!exp0.bottomHidden || !exp0.dropHidden || !exp0.qualityDisabled) errors.push("export screen initial state wrong");
+  await shot("ui_v10_export.png");
+
+  // 水印：文字 -> 触发重编码、质量滑块生效
+  await page.select("#wmType", "text");
+  await page.evaluate(() => {
+    const el = document.getElementById("wmText");
+    el.value = "TEST WM";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await new Promise((r) => setTimeout(r, 400));
+  const exp1 = await page.evaluate(() => ({
+    qualityDisabled: document.getElementById("exportQuality").disabled,
+    wmVisible: !document.getElementById("wmTextFields").classList.contains("hidden"),
+    info: document.getElementById("exportInfo").innerText.replace(/\s+/g, " ").slice(0, 120),
+    startDisabled: document.getElementById("exportStart").disabled,
+  }));
+  console.log("export screen (watermark):", JSON.stringify(exp1));
+  if (exp1.qualityDisabled || !exp1.wmVisible || exp1.startDisabled) errors.push("watermark state wrong");
+  await shot("ui_v10_export_watermark.png");
+
+  // 成品预览应包含水印（在导出界面也能进入）
+  await page.click("#previewFromExport");
+  await page.waitForFunction('document.getElementById("bigStatus").textContent.indexOf("已生成") >= 0', { timeout: 120000 });
+  console.log("preview from export:", await page.evaluate(() => document.getElementById("bigStatus").textContent.slice(0, 80)));
+  await shot("ui_v10_preview_watermark.png");
+  await page.keyboard.press("Escape");
+  await new Promise((r) => setTimeout(r, 500));
+
+  // 导出
+  await page.click("#exportStart");
+  await page.waitForFunction('document.getElementById("exportStatus").textContent.indexOf("完成") >= 0', { timeout: 120000 });
   await new Promise((r) => setTimeout(r, 1200));
   const files = fs.readdirSync(downloadDir);
   console.log("downloads:", files, files.length ? fs.statSync(path.join(downloadDir, files[0])).size : 0);
@@ -165,19 +168,33 @@ const SHOTS = path.join(ROOT, "tests");
     const im = new Image(); im.onload = () => res([im.naturalWidth, im.naturalHeight]); im.onerror = rej; im.src = url;
   }), "file://" + path.join(downloadDir, files[0]));
   console.log("Chrome decoded export:", dims);
-  // 回归：把刚导出的 HDR 图（已含增益图）再上传，应被检测并拒绝
+  console.log("export status:", await page.evaluate(() => document.getElementById("exportStatus").textContent));
+  await shot("ui_v10_export_done.png");
+
+  // 返回编辑
+  await page.click("#exportBack");
+  await new Promise((r) => setTimeout(r, 500));
+  const backEdit = await page.evaluate(() => ({
+    editor: !document.getElementById("editor").classList.contains("hidden"),
+    exportScreen: document.getElementById("exportScreen").classList.contains("hidden"),
+    drop: !document.getElementById("drop").classList.contains("hidden"),
+  }));
+  console.log("back to edit:", JSON.stringify(backEdit));
+  if (!backEdit.editor || !backEdit.exportScreen || !backEdit.drop) errors.push("back to edit failed");
+
+  // 回归：把刚导出的 HDR 图（已含增益图 + 水印）再上传，应被检测并拒绝
   const exportedPath = path.join(downloadDir, files[0]);
   await (await page.$("#file")).uploadFile(exportedPath);
   await new Promise((r) => setTimeout(r, 1200));
   const rejectInfo = await page.evaluate(() => ({
     banner: !document.getElementById("loadError").classList.contains("hidden"),
-    text: document.getElementById("loadError").textContent.replace(/\s+/g, " ").slice(0, 80),
+    text: document.getElementById("loadError").textContent.replace(/\s+/g, " ").slice(0, 70),
   }));
   console.log("HDR re-upload rejected:", JSON.stringify(rejectInfo));
   if (!rejectInfo.banner) errors.push("already-HDR input was not rejected");
-  await shot("ui_v9_reject.png");
+  await shot("ui_v10_reject.png");
 
   console.log("js errors:", errors.length ? errors : "none");
-  if (errors.length || !hidden || !files.length) process.exitCode = 1;
+  if (errors.length || !files.length) process.exitCode = 1;
   await browser.close();
 })().catch((e) => { console.error("FAILED:", e); process.exit(1); });

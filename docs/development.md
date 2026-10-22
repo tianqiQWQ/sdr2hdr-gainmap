@@ -73,7 +73,7 @@ node tools/test_ui.js tests/input_synthetic_12mp.jpg
 CHROME_PATH=/usr/bin/google-chrome node tools/test_ui.js tests/input_synthetic_12mp.jpg
 ```
 
-截图会写到 `tests/` 下（已在 `.gitignore` 中忽略）。脚本最后还会把导出的 HDR 图再次上传，验证"已含增益图输入会被拒绝"的回归。
+截图会写到 `tests/` 下（已在 `.gitignore` 中忽略）。脚本覆盖底部导航、全屏成品预览、独立导出界面（直通质量禁用 / 水印触发重编码）、水印导出，最后还会把导出的 HDR 图再次上传，验证"已含增益图输入会被拒绝"的回归。
 
 ## 项目约定
 

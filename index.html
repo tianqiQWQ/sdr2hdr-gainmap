@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDR → HDR 转换器（本地网页版）v0.9</title>
+<title>SDR → HDR 转换器（本地网页版）v0.10</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -177,6 +177,46 @@
   }
   .result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .result-head .note { margin: 0; flex: 1; }
+  /* ===== 底部导航（编辑 / 成品预览 / 导出） ===== */
+  .bottom-bar {
+    flex: none; display: flex; align-items: center; gap: 12px;
+    padding: 8px 20px calc(8px + env(safe-area-inset-bottom, 0px));
+    background: var(--panel); border-top: 1px solid var(--line);
+  }
+  .bb-left, .bb-right { display: flex; align-items: center; gap: 10px; }
+  .bb-center { flex: 1; display: flex; justify-content: center; }
+  .bb-btn {
+    background: #232a36; color: var(--fg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 18px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  }
+  .bb-btn.primary { background: var(--accent); color: #06121f; border-color: transparent; }
+  .bb-btn.active { background: #2d3a52; border-color: var(--accent); color: var(--accent); }
+  .bb-btn:disabled { opacity: .45; cursor: default; }
+  .bb-status { color: var(--muted); font-size: 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ===== 导出界面（独立 screen） ===== */
+  .screen { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  #exportScreen { display: flex; flex-direction: column; gap: 12px; }
+  .export-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .export-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  .export-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+  @media (max-width: 900px) { .export-grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .field { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: center; margin: 8px 0; }
+  .field > label { color: var(--muted); font-size: 12.5px; }
+  .field input[type=range] { width: 100%; accent-color: var(--accent); }
+  .field input[type=text], .field select { background: #232a36; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 13px; width: 100%; }
+  .field input[type=color] { width: 44px; height: 30px; background: none; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
+  .field input[type=file] { font-size: 12px; color: var(--muted); }
+  .field .val { text-align: right; }
+  .field.range { grid-template-columns: 96px minmax(0, 1fr) 72px; }
+  .field.range .val { text-align: right; }
+  .field .hint { grid-column: 2; color: #7f8a9b; font-size: 11.5px; margin-top: -2px; }
+  .wm-group { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+  .exp-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  #exportInfo { font-size: 12.5px; line-height: 1.9; }
+  #exportStatus { margin-top: 8px; }
   .busy { opacity: .6; pointer-events: none; }
   ol.steps { margin: 10px 0 0; padding-left: 20px; color: var(--muted); font-size: 12.5px; }
   ol.steps li { margin: 3px 0; }
@@ -185,8 +225,8 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.9 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.9 更新：上传已含增益图的 HDR 图片时会检测并提示错误、拒绝处理，避免二次压缩丢失原始 HDR</div>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.10 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.10 更新：新增底部导航与独立导出界面（JPEG 质量 / 文字与 Logo 水印），成品预览改为全屏</div>
   <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
      <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
 </header>
@@ -237,7 +277,6 @@
             <option value="truehdr">真 HDR 预览（原生渲染）</option>
           </select>
         </label>
-        <button id="bigViewBtn" class="secondary sm" disabled>⤢ 大图 HDR 调试</button>
       </div>
 
       <div class="ctl-grid">
@@ -270,17 +309,70 @@
         </div>
       </details>
 
-      <div class="ctl-row action-bar">
-        <button id="exportBtn" disabled>导出 HDR JPG</button>
-        <button id="resetBtn" class="secondary" disabled>重新选择</button>
-        <span class="val" id="status"></span>
-      </div>
       <div class="meta" id="meta"></div>
       <div class="note" id="note">
         提示：导出的文件在不支持 HDR 的显示环境里和原图看起来一样，这是正常现象；只有 HDR 屏 + 支持的浏览器/相册才会显示更亮的高光。
       </div>
       </div>
     </aside>
+    </div>
+  </section>
+
+  <section id="exportScreen" class="hidden screen">
+    <div class="export-head">
+      <button id="exportBack" class="secondary sm">← 返回编辑</button>
+      <h2>导出</h2>
+      <span class="val" id="exportHeadInfo"></span>
+    </div>
+    <div class="export-grid">
+      <div class="card">
+        <h3>输出</h3>
+        <div class="field"><label>格式</label><select disabled><option>JPG（Ultra HDR）</option></select></div>
+        <div class="field"><label for="filenamePrefix">文件名前缀</label><input type="text" id="filenamePrefix" placeholder="默认使用原图名"></div>
+        <div class="field"><label>输出模式</label><select id="outputMode" disabled><option value="single">单张 HDR</option></select></div>
+        <div class="hint" style="margin-left:96px;color:#7f8a9b;font-size:11.5px">自动追加 _HDR.jpg；SDR/HDR 对比拼图在后续版本加入</div>
+
+        <h3 style="margin-top:16px">JPEG 质量</h3>
+        <div class="field range"><label for="exportQuality">质量</label><input type="range" id="exportQuality" min="70" max="100" step="1" value="92"><span class="val" id="qualityVal">92</span></div>
+        <div class="field"><span></span><span class="hint" id="qualityHint">普通 JPG 直通时质量由原图决定；重编码模式（水印/曝光/PNG）下生效。</span></div>
+
+        <h3 style="margin-top:16px">水印</h3>
+        <div class="field"><label for="wmType">类型</label><select id="wmType">
+          <option value="none">无水印</option>
+          <option value="text">文字水印</option>
+          <option value="image">图片 Logo</option>
+        </select></div>
+        <div id="wmTextFields" class="wm-group hidden">
+          <div class="field"><label for="wmText">文字</label><input type="text" id="wmText" placeholder="例如 @你的名字"></div>
+          <div class="field range"><label for="wmFontSize">字号</label><input type="range" id="wmFontSize" min="1" max="10" step="0.5" value="3"><span class="val" id="wmFontSizeVal"></span></div>
+          <div class="field"><label for="wmColor">颜色</label><input type="color" id="wmColor" value="#ffffff"></div>
+        </div>
+        <div id="wmImageFields" class="wm-group hidden">
+          <div class="field"><label>Logo</label><input type="file" id="wmLogoFile" accept="image/png,image/jpeg"></div>
+          <div class="field range"><label for="wmLogoScale">缩放</label><input type="range" id="wmLogoScale" min="2" max="40" step="1" value="12"><span class="val" id="wmLogoScaleVal"></span></div>
+        </div>
+        <div id="wmCommonFields" class="wm-group hidden">
+          <div class="field"><label for="wmPosition">位置</label><select id="wmPosition">
+            <option value="tl">左上</option><option value="tc">上中</option><option value="tr">右上</option>
+            <option value="ml">左中</option><option value="mc">居中</option><option value="mr">右中</option>
+            <option value="bl">左下</option><option value="bc">下中</option><option value="br" selected>右下</option>
+          </select></div>
+          <div class="field range"><label for="wmMargin">边距</label><input type="range" id="wmMargin" min="0" max="20" step="0.5" value="3"><span class="val" id="wmMarginVal"></span></div>
+          <div class="field range"><label for="wmOpacity">不透明度</label><input type="range" id="wmOpacity" min="10" max="100" step="1" value="70"><span class="val" id="wmOpacityVal"></span></div>
+          <div class="field"><span></span><span class="hint">水印在转换完成后添加，不参与 HDR 提亮（水印区域增益会被清零）。</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>输出信息</h3>
+        <div id="exportInfo" class="meta" style="margin-top:0"></div>
+        <div class="exp-actions">
+          <button id="exportStart" disabled>开始导出</button>
+          <button id="previewFromExport" class="secondary" disabled>成品预览</button>
+        </div>
+        <div class="val" id="exportStatus"></div>
+        <div class="hint" style="margin-top:10px;color:#7f8a9b;font-size:11.5px">导出前建议先点「成品预览」确认最终效果（含质量/水印）。</div>
+      </div>
     </div>
   </section>
 
@@ -299,22 +391,35 @@
   </section>
 </main>
 
-<!-- 大图 HDR 调试视图 -->
+<nav id="bottomBar" class="bottom-bar hidden">
+  <div class="bb-left">
+    <button id="editTab" class="bb-btn active">编辑</button>
+  </div>
+  <div class="bb-center">
+    <button id="previewBtn" class="bb-btn" disabled>成品预览</button>
+  </div>
+  <div class="bb-right">
+    <span class="val bb-status" id="status"></span>
+    <button id="resetBtn" class="secondary sm" disabled>重新选择</button>
+    <button id="exportBtn" class="bb-btn primary" disabled>导出</button>
+  </div>
+</nav>
+
+<!-- 成品预览（全屏） -->
 <div id="bigView" class="big-view hidden">
   <div class="big-top">
     <div class="big-title">
-      大图 HDR 调试
+      成品预览
       <span class="big-status" id="bigStatus">准备中…</span>
     </div>
     <div class="big-actions">
       <button id="bigFit" class="secondary sm">适应窗口</button>
       <button id="bigActual" class="secondary sm">1:1</button>
-      <a id="bigDownload" class="btn-like" href="#" download>下载当前 HDR</a>
-      <button id="bigClose" class="secondary sm">关闭（Esc）</button>
+      <a id="bigDownload" class="btn-like" href="#" download>下载当前成品</a>
+      <button id="bigClose" class="secondary sm">返回编辑（Esc）</button>
     </div>
   </div>
-  <div class="big-stage" id="bigStage"><img id="bigImg" alt="全分辨率 HDR 预览"></div>
-  <div class="big-dock" id="bigDock"></div>
+  <div class="big-stage" id="bigStage"><img id="bigImg" alt="最终导出成品预览"></div>
 </div>
 
 <canvas id="workGain" class="hidden"></canvas>
@@ -760,7 +865,7 @@ function boxBlurFloat(src, w, h, rad) {
 /* ============================================================
  * 增益图生成（分块，内存与图像大小基本无关）
  * ============================================================ */
-async function buildGainMapJpeg(bitmap, gainW, gainH, profile) {
+async function buildGainMapJpeg(bitmap, gainW, gainH, profile, opts) {
   const scale = gainW / bitmap.width;
   const gainCanvas = document.getElementById("workGain");
   gainCanvas.width = gainW; gainCanvas.height = gainH;
@@ -814,6 +919,11 @@ async function buildGainMapJpeg(bitmap, gainW, gainH, profile) {
             const zd = toneMapExposure(z, profile.comp);
             const recover = zd > 1e-7 ? Math.log2(z / zd) : 0;
             v = clamp((profile.M * v + recover) / profile.K, 0, 1);
+          }
+          if (opts && opts.maskAlpha) {
+            // 水印/标签/中缝区域不参与 HDR 提亮（按 mask alpha 线性清零）
+            const ma = opts.maskAlpha[(ty + cy) * gainW + (tx + cx)];
+            if (ma) v *= 1 - ma / 255;
           }
           if (v > 0.02 && v < 0.98) v += dither[((tx + cx) & 1) | (rowPh << 1)] / 255;
           v = clamp(v, 0, 1);
@@ -1093,10 +1203,13 @@ const state = {
   bigPreviewSeq: 0,
   bigPreviewUrl: null,
   bigPreviewTime: 0,
-  controlsHome: null,
   sdrBaseKey: null,
   orientation: 1,
   isPng: false,
+  screen: "edit",
+  autoPrefix: "",
+  wmLogoBitmap: null,
+  exportOpts: null,
 };
 
 const els = {
@@ -1150,16 +1263,46 @@ const els = {
   meta: document.getElementById("meta"),
   note: document.getElementById("note"),
   controls: document.querySelector(".controls"),
-  bigViewBtn: document.getElementById("bigViewBtn"),
   bigView: document.getElementById("bigView"),
   bigStage: document.getElementById("bigStage"),
   bigImg: document.getElementById("bigImg"),
   bigStatus: document.getElementById("bigStatus"),
-  bigDock: document.getElementById("bigDock"),
   bigFit: document.getElementById("bigFit"),
   bigActual: document.getElementById("bigActual"),
   bigDownload: document.getElementById("bigDownload"),
   bigClose: document.getElementById("bigClose"),
+
+  bottomBar: document.getElementById("bottomBar"),
+  editTab: document.getElementById("editTab"),
+  previewBtn: document.getElementById("previewBtn"),
+  exportScreen: document.getElementById("exportScreen"),
+  exportBack: document.getElementById("exportBack"),
+  exportHeadInfo: document.getElementById("exportHeadInfo"),
+  previewFromExport: document.getElementById("previewFromExport"),
+  filenamePrefix: document.getElementById("filenamePrefix"),
+  outputMode: document.getElementById("outputMode"),
+  exportQuality: document.getElementById("exportQuality"),
+  qualityVal: document.getElementById("qualityVal"),
+  qualityHint: document.getElementById("qualityHint"),
+  wmType: document.getElementById("wmType"),
+  wmTextFields: document.getElementById("wmTextFields"),
+  wmImageFields: document.getElementById("wmImageFields"),
+  wmCommonFields: document.getElementById("wmCommonFields"),
+  wmText: document.getElementById("wmText"),
+  wmFontSize: document.getElementById("wmFontSize"),
+  wmFontSizeVal: document.getElementById("wmFontSizeVal"),
+  wmColor: document.getElementById("wmColor"),
+  wmLogoFile: document.getElementById("wmLogoFile"),
+  wmLogoScale: document.getElementById("wmLogoScale"),
+  wmLogoScaleVal: document.getElementById("wmLogoScaleVal"),
+  wmPosition: document.getElementById("wmPosition"),
+  wmMargin: document.getElementById("wmMargin"),
+  wmMarginVal: document.getElementById("wmMarginVal"),
+  wmOpacity: document.getElementById("wmOpacity"),
+  wmOpacityVal: document.getElementById("wmOpacityVal"),
+  exportInfo: document.getElementById("exportInfo"),
+  exportStart: document.getElementById("exportStart"),
+  exportStatus: document.getElementById("exportStatus"),
 };
 
 function setStatus(msg, isWarn) {
@@ -1312,7 +1455,7 @@ function updateHdrCaption() {
   const M = 3.0 * (parseFloat(els.strength.value) / 100);
   const peak = Math.pow(2, Math.max(0.001, M));
   if (mode === "truehdr") {
-    els.captionHdr.textContent = `真 HDR 预览 —— 由浏览器原生渲染 gain map（本机 HDR：${hdrSupportText()}）。若这里和左侧 SDR 看起来一样，说明当前浏览器没有启用 HDR 图片渲染：macOS 上请用 Safari 打开本页，或直接看导出的 JPG。`;
+    els.captionHdr.textContent = `真 HDR 预览 —— 由浏览器原生渲染 gain map（本机 HDR：${hdrSupportText()}）。若这里和左侧 SDR 看起来一样，说明当前浏览器没有启用 HDR 图片渲染：macOS 上请用 Safari 打开本页，或直接看导出的 JPG。最终质量/水印请在「成品预览」或导出文件里确认。`;
   } else if (mode === "heatmap") {
     els.captionHdr.textContent = "增益热力图 —— 颜色越亮 = HDR 屏上提亮越多（黑色≈不变）；这是增益可视化，不是真实画面。";
   } else if (mode === "headroom") {
@@ -1473,8 +1616,18 @@ async function loadFile(file) {
   }
   els.exportBtn.disabled = false;
   els.resetBtn.disabled = false;
-  els.exportBtn.textContent = "导出 HDR JPG";
-  if (els.bigViewBtn) els.bigViewBtn.disabled = false;
+  els.previewBtn.disabled = false;
+  els.bottomBar.classList.remove("hidden");
+  state.screen = "edit";
+  els.exportScreen.classList.add("hidden");
+  const baseName = file.name.replace(/\.[^.]+$/, "");
+  if (!els.filenamePrefix.value || els.filenamePrefix.value === state.autoPrefix) {
+    els.filenamePrefix.value = baseName;
+  }
+  state.autoPrefix = baseName;
+  updateWatermarkUi();
+  updateExportLabels();
+  updateExportInfo();
 
   updateParamLabels();
   applyAssistVisibility();
@@ -1592,17 +1745,130 @@ function insertSegmentsAfterApps(bytes, segs) {
   return concatBytes(bytes.subarray(0, pos), ...segs, bytes.subarray(pos));
 }
 
+/** 当前导出设置（来自独立导出界面） */
+function readExportOpts() {
+  const num = (el, d) => {
+    const v = el ? parseFloat(el.value) : NaN;
+    return Number.isFinite(v) ? v : d;
+  };
+  const type = els.wmType ? els.wmType.value : "none";
+  const wm = type === "none" ? { type: "none" } : {
+    type,
+    text: els.wmText ? els.wmText.value : "",
+    fontPct: num(els.wmFontSize, 3),
+    color: els.wmColor ? els.wmColor.value : "#ffffff",
+    logoScalePct: num(els.wmLogoScale, 12),
+    position: els.wmPosition ? els.wmPosition.value : "br",
+    marginPct: num(els.wmMargin, 3),
+    opacity: clamp(num(els.wmOpacity, 70) / 100, 0, 1),
+  };
+  return {
+    quality: clamp(num(els.exportQuality, 92), 70, 100),
+    filenamePrefix: els.filenamePrefix ? els.filenamePrefix.value.trim() : "",
+    outputMode: "single",
+    watermark: wm,
+    logoBitmap: state.wmLogoBitmap,
+  };
+}
+
+function watermarkEffective(wm, logoBitmap) {
+  if (!wm || wm.type === "none") return false;
+  if (wm.type === "text") return !!(wm.text || "").trim();
+  if (wm.type === "image") return !!(logoBitmap && logoBitmap.width);
+  return false;
+}
+
+function needReencodeForExport(params, opts) {
+  const logo = (opts && (opts.logoBitmap || state.wmLogoBitmap)) || state.wmLogoBitmap;
+  return !!(params.exposureEv > 0.001) || !!state.isPng ||
+    watermarkEffective(opts && opts.watermark, logo);
+}
+
+/** 计算水印在画布上的位置与尺寸（支持文字 / 图片 logo） */
+function measureWatermark(ctx, w, h, wm, logoBitmap) {
+  const minSide = Math.min(w, h);
+  const margin = Math.max(0, Math.round(clamp((wm.marginPct || 0) / 100, 0, 0.2) * minSide));
+  let item = null;
+  if (wm.type === "text") {
+    const text = (wm.text || "").trim();
+    if (!text) return null;
+    const size = Math.max(8, Math.round(clamp((wm.fontPct || 3) / 100, 0.005, 0.2) * minSide));
+    const font = `700 ${size}px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif`;
+    ctx.save();
+    ctx.font = font;
+    const m = ctx.measureText(text);
+    ctx.restore();
+    item = { kind: "text", text, width: m.width, height: size * 1.15, font, size };
+  } else if (wm.type === "image" && logoBitmap && logoBitmap.width) {
+    const tw = Math.max(8, Math.round(clamp((wm.logoScalePct || 12) / 100, 0.01, 0.6) * minSide));
+    const th = Math.max(1, Math.round(tw * logoBitmap.height / logoBitmap.width));
+    item = { kind: "image", width: tw, height: th };
+  }
+  if (!item) return null;
+  const pos = wm.position || "br";
+  const vert = pos[0], horiz = pos[1];
+  let x = horiz === "l" ? margin : horiz === "r" ? w - margin - item.width : (w - item.width) / 2;
+  let y = vert === "t" ? margin : vert === "b" ? h - margin - item.height : (h - item.height) / 2;
+  x = clamp(x, 0, Math.max(0, w - item.width));
+  y = clamp(y, 0, Math.max(0, h - item.height));
+  return { x, y, width: item.width, height: item.height, item, margin };
+}
+
+/** 把水印画到画布；maskOnly=true 时只画形状（白色）用于生成增益图清零蒙版 */
+function drawWatermark(ctx, w, h, wm, logoBitmap, maskOnly) {
+  if (!wm || wm.type === "none") return false;
+  const m = measureWatermark(ctx, w, h, wm, logoBitmap);
+  if (!m) return false;
+  ctx.save();
+  ctx.globalAlpha = maskOnly ? 1 : clamp(wm.opacity == null ? 0.7 : wm.opacity, 0, 1);
+  if (m.item.kind === "text") {
+    ctx.font = m.item.font;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = maskOnly ? "#ffffff" : (wm.color || "#ffffff");
+    if (!maskOnly) {
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = Math.max(2, m.item.size * 0.18);
+      ctx.shadowOffsetY = Math.max(1, m.item.size * 0.04);
+    }
+    ctx.fillText(m.item.text, m.x, m.y);
+  } else {
+    ctx.drawImage(logoBitmap, m.x, m.y, m.item.width, m.item.height);
+  }
+  ctx.restore();
+  return true;
+}
+
+/** 生成增益图清零蒙版（增益图分辨率，alpha 0-255） */
+function buildWatermarkMaskAlpha(w, h, wm, logoBitmap, gainW, gainH) {
+  if (!wm || wm.type === "none") return null;
+  const mask = document.createElement("canvas");
+  mask.width = w; mask.height = h;
+  const mctx = mask.getContext("2d", { willReadFrequently: true });
+  if (!drawWatermark(mctx, w, h, wm, logoBitmap, true)) return null;
+  const small = document.createElement("canvas");
+  small.width = gainW; small.height = gainH;
+  const sctx = small.getContext("2d", { willReadFrequently: true });
+  sctx.drawImage(mask, 0, 0, gainW, gainH);
+  const d = sctx.getImageData(0, 0, gainW, gainH).data;
+  const alpha = new Uint8ClampedArray(gainW * gainH);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = d[i * 4 + 3];
+  return alpha;
+}
+
 /**
- * 生成用于导出的 SDR 底图 JPEG（全分辨率）：
+ * 生成用于导出的 SDR 底图 canvas（全分辨率）：
  *  - applyExposure=true：整体曝光提升（线性光×2^EV + 高光软肩，色相/饱和度保持）
  *  - applyExposure=false：仅把输入（如 PNG）重编码为 JPEG，像素内容保持一致
+ *  - watermark：完成后叠加水印（SDR 层）
  */
-async function buildSdrBaseJpeg(bitmap, params, applyExposure) {
+async function buildBaseCanvas(bitmap, params, opts) {
+  opts = opts || {};
   const w = bitmap.width, h = bitmap.height;
   const baseCanvas = document.createElement("canvas");
   baseCanvas.width = w; baseCanvas.height = h;
   const bctx = baseCanvas.getContext("2d", { willReadFrequently: true });
-  if (!applyExposure) {
+  if (!opts.applyExposure) {
     bctx.drawImage(bitmap, 0, 0);
   } else {
     const F = Math.pow(2, params.exposureEv || 0);
@@ -1632,37 +1898,66 @@ async function buildSdrBaseJpeg(bitmap, params, applyExposure) {
       }
     }
   }
-  const blob = await canvasToBlob(baseCanvas, "image/jpeg", 0.94);
+  if (opts.watermark && opts.watermark.type !== "none") {
+    drawWatermark(bctx, w, h, opts.watermark, opts.logoBitmap, false);
+  }
+  return baseCanvas;
+}
+
+async function canvasToJpegBytes(canvas, quality) {
+  const blob = await canvasToBlob(canvas, "image/jpeg", clamp(quality, 0.7, 1));
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-/** 通用输出构建：普通模式（SDR 原字节保留）或曝光模式（重编码底图） */
-async function buildOutputBytesGeneric(bitmap, originalBytes, params, orientation, inputIsPng) {
+/** 通用输出构建：普通模式（SDR 原字节保留）或重编码模式（曝光/PNG/水印） */
+async function buildOutputBytesGeneric(bitmap, originalBytes, params, orientation, inputIsPng, exportOpts) {
+  exportOpts = exportOpts || readExportOpts();
   const w0 = bitmap.width, h0 = bitmap.height;
   const gainScale = params.gainScale || 1;
   const gw = Math.max(1, Math.round(w0 * gainScale));
   const gh = Math.max(1, Math.round(h0 * gainScale));
   const profile = makeProfile(params, gainScale);
-  const needReencode = profile.exposureMode || !!inputIsPng;
+  const wm = exportOpts.watermark || { type: "none" };
+  const wmActive = watermarkEffective(wm, exportOpts.logoBitmap || state.wmLogoBitmap);
+  const needReencode = profile.exposureMode || !!inputIsPng || wmActive;
   let baseBytes = originalBytes;
   let meta;
+  let maskAlpha = null;
+  let reencoded = false;
   if (needReencode) {
-    baseBytes = await buildSdrBaseJpeg(bitmap, params, profile.exposureMode);
+    reencoded = true;
+    const baseCanvas = await buildBaseCanvas(bitmap, params, {
+      applyExposure: profile.exposureMode,
+      watermark: wmActive ? wm : null,
+      logoBitmap: exportOpts.logoBitmap || state.wmLogoBitmap,
+    });
+    const quality = clamp((exportOpts.quality == null ? 92 : exportOpts.quality) / 100, 0.7, 1);
+    baseBytes = await canvasToJpegBytes(baseCanvas, quality);
     if (!inputIsPng && (!orientation || orientation === 1)) {
       baseBytes = insertSegmentsAfterApps(baseBytes, extractAppSegments(originalBytes));
     }
     meta = profile.exposureMode ? makeMeta(params.strength, profile.K) : makeMeta(params.strength);
+    if (wmActive) {
+      maskAlpha = buildWatermarkMaskAlpha(w0, h0, wm, exportOpts.logoBitmap || state.wmLogoBitmap, gw, gh);
+    }
   } else {
     meta = makeMeta(params.strength);
   }
-  const gainMapJpeg = await buildGainMapJpeg(bitmap, gw, gh, profile);
-  return { bytes: assembleUltraHdr(baseBytes, gainMapJpeg, meta), meta, profile };
+  const gainMapJpeg = await buildGainMapJpeg(bitmap, gw, gh, profile, { maskAlpha });
+  return {
+    bytes: assembleUltraHdr(baseBytes, gainMapJpeg, meta),
+    meta,
+    profile,
+    baseDims: [w0, h0],
+    reencoded,
+    needReencode,
+  };
 }
 
-/** 按当前参数生成最终导出字节，大图调试与导出共用 */
-async function buildExportBytes(params) {
+/** 按当前参数 + 导出设置生成最终导出字节（成品预览与导出共用） */
+async function buildExportBytes(params, exportOpts) {
   const r = await buildOutputBytesGeneric(
-    state.bitmap, state.originalBytes, params, state.orientation, !!state.isPng
+    state.bitmap, state.originalBytes, params, state.orientation, !!state.isPng, exportOpts
   );
   return r.bytes;
 }
@@ -1671,6 +1966,119 @@ function setBigStatus(msg, isWarn) {
   if (!els.bigStatus) return;
   els.bigStatus.textContent = msg || "";
   els.bigStatus.style.color = isWarn ? "var(--warn)" : "var(--muted)";
+}
+
+function setExportStatus(msg, isWarn) {
+  if (!els.exportStatus) return;
+  els.exportStatus.textContent = msg || "";
+  els.exportStatus.style.color = isWarn ? "var(--warn)" : "var(--muted)";
+}
+
+function escapeHtml(str) {
+  return String(str == null ? "" : str).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+function baseNameOfFile() {
+  return state.file ? state.file.name.replace(/\.[^.]+$/, "") : "preview";
+}
+
+function downloadFileName(opts) {
+  const prefix = (opts && opts.filenamePrefix ? opts.filenamePrefix : baseNameOfFile()) || "HDR";
+  return prefix + "_HDR.jpg";
+}
+
+function updateExportLabels() {
+  const opts = readExportOpts();
+  if (els.qualityVal) els.qualityVal.textContent = String(Math.round(opts.quality));
+  if (els.wmFontSizeVal) els.wmFontSizeVal.textContent = (opts.watermark.fontPct || 3) + "% 短边";
+  if (els.wmLogoScaleVal) els.wmLogoScaleVal.textContent = (opts.watermark.logoScalePct || 12) + "% 短边";
+  if (els.wmMarginVal) els.wmMarginVal.textContent = (opts.watermark.marginPct || 0) + "%";
+  if (els.wmOpacityVal) els.wmOpacityVal.textContent = Math.round((opts.watermark.opacity == null ? 0.7 : opts.watermark.opacity) * 100) + "%";
+}
+
+function updateWatermarkUi() {
+  if (!els.wmType) return;
+  const type = els.wmType.value;
+  els.wmTextFields.classList.toggle("hidden", type !== "text");
+  els.wmImageFields.classList.toggle("hidden", type !== "image");
+  els.wmCommonFields.classList.toggle("hidden", type === "none");
+  updateExportLabels();
+}
+
+function updateExportInfo() {
+  if (!els.exportInfo) return;
+  if (!state.bitmap) {
+    els.exportInfo.innerHTML = "尚未加载图片";
+    els.exportStart.disabled = true;
+    els.previewFromExport.disabled = true;
+    els.exportHeadInfo.textContent = "";
+    return;
+  }
+  const params = readParams();
+  const opts = readExportOpts();
+  const w = state.bitmap.width, h = state.bitmap.height;
+  const gw = Math.max(1, Math.round(w * (params.gainScale || 1)));
+  const gh = Math.max(1, Math.round(h * (params.gainScale || 1)));
+  const needRe = needReencodeForExport(params, opts);
+  const wmType = opts.watermark.type;
+  const wmText = wmType === "none" ? "无" : wmType === "text" ? "文字" : "图片 Logo";
+  let baseMode;
+  if (!needRe) baseMode = "原图直通（字节保留）";
+  else if (params.exposureEv > 0.001) baseMode = "重编码（整体曝光）";
+  else if (state.isPng) baseMode = "重编码（PNG → JPEG）";
+  else baseMode = "重编码（加水印）";
+  const outName = downloadFileName(opts);
+  const lines = [
+    `输出文件：<b>${escapeHtml(outName)}</b>`,
+    `尺寸：<b>${w}×${h}</b>（${(w * h / 1e6).toFixed(1)} MP）`,
+    `底图：<b>${baseMode}</b>`,
+    `JPEG 质量：<b>${needRe ? Math.round(opts.quality) : "原图"}</b>`,
+    `水印：<b>${wmText}</b>`,
+    `增益图：<b>${gw}×${gh}</b>（${((params.gainScale || 1) * 100).toFixed(0)}%）`,
+  ];
+  if (params.exposureEv > 0.001) lines.push(`整体曝光：<b>+${params.exposureEv.toFixed(1)} EV</b>`);
+  if (wmType === "image" && !state.wmLogoBitmap) lines.push(`<span style="color:var(--warn)">⚠ 请先选择 Logo 图片</span>`);
+  if (wmType === "text" && !(opts.watermark.text || "").trim()) lines.push(`<span style="color:var(--warn)">⚠ 请输入水印文字</span>`);
+  els.exportInfo.innerHTML = lines.join("<br>");
+  els.qualityHint.textContent = needRe
+    ? "当前会重编码底图，质量滑块生效。"
+    : "普通 JPG 直通时质量由原图决定；加水印/曝光/PNG 时生效。";
+  els.exportQuality.disabled = !needRe || state.busy;
+  els.exportHeadInfo.textContent = outName;
+  els.exportStart.disabled = state.busy ||
+    (wmType === "image" && !state.wmLogoBitmap) ||
+    (wmType === "text" && !(opts.watermark.text || "").trim());
+  els.previewFromExport.disabled = state.busy;
+}
+
+function refreshPreviewIfOpen() {
+  if (!state.bigPreviewOpen) return;
+  clearTimeout(state.bigPreviewTimer);
+  state.bigPreviewTimer = setTimeout(() => { generateBigHdrPreview(); }, 450);
+}
+
+function onExportOptsChanged() {
+  updateWatermarkUi();
+  updateExportLabels();
+  updateExportInfo();
+  refreshPreviewIfOpen();
+}
+
+function showScreen(name) {
+  state.screen = name;
+  const edit = name === "edit";
+  els.editor.classList.toggle("hidden", !(edit && state.bitmap));
+  els.exportScreen.classList.toggle("hidden", name !== "export");
+  els.bottomBar.classList.toggle("hidden", !edit || !state.bitmap);
+  if (els.drop) els.drop.classList.toggle("hidden", name !== "edit");
+  if (name === "export") {
+    updateWatermarkUi();
+    updateExportLabels();
+    updateExportInfo();
+    setExportStatus("");
+  }
 }
 
 function scheduleBigHdrPreview() {
@@ -1682,10 +2090,11 @@ async function generateBigHdrPreview() {
   if (!state.bitmap || !state.bigPreviewOpen) return;
   const seq = ++state.bigPreviewSeq;
   const t0 = performance.now();
-  setBigStatus("正在按最终分辨率生成 HDR 预览…（大图可能需要几秒）");
+  setBigStatus("正在按最终分辨率生成成品预览…（含质量/水印设置，大图可能需要几秒）");
   try {
     const params = readParams();
-    const bytes = await buildExportBytes(params);
+    const opts = readExportOpts();
+    const bytes = await buildExportBytes(params, opts);
     const url = URL.createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
     const probe = new Image();
     probe.src = url;
@@ -1695,14 +2104,16 @@ async function generateBigHdrPreview() {
     state.bigPreviewUrl = url;
     els.bigImg.src = url;
     els.bigDownload.href = url;
-    const baseName = state.file ? state.file.name.replace(/\.[^.]+$/, "") : "preview";
-    els.bigDownload.download = baseName + "_HDR.jpg";
+    els.bigDownload.download = downloadFileName(opts);
     if (old) setTimeout(() => URL.revokeObjectURL(old), 15000);
     const ms = Math.round(performance.now() - t0);
     state.bigPreviewTime = ms;
-    setBigStatus(`已生成 ${probe.naturalWidth || "?"}×${probe.naturalHeight || "?"} · 最终分辨率 · 用时 ${ms} ms · 文件 ${(bytes.length / 1024 / 1024).toFixed(2)} MB · 本机 HDR：${hdrSupportText()}`);
+    const extras = [];
+    if (needReencodeForExport(params, opts)) extras.push(`质量 ${Math.round(opts.quality)}`);
+    if (opts.watermark.type !== "none") extras.push(`水印 ${opts.watermark.type === "text" ? "文字" : "Logo"}`);
+    setBigStatus(`已生成 ${probe.naturalWidth || "?"}×${probe.naturalHeight || "?"} · 最终成品 · 用时 ${ms} ms · 文件 ${(bytes.length / 1024 / 1024).toFixed(2)} MB${extras.length ? " · " + extras.join(" · ") : ""} · 本机 HDR：${hdrSupportText()}`);
   } catch (e) {
-    console.error("大图 HDR 预览生成失败:", e);
+    console.error("成品预览生成失败:", e);
     setBigStatus("生成失败：" + e.message, true);
   }
 }
@@ -1711,9 +2122,6 @@ function openBigView() {
   if (!state.bitmap || state.bigPreviewOpen) return;
   state.bigPreviewOpen = true;
   els.bigView.classList.remove("hidden");
-  document.body.style.overflow = "hidden";
-  state.controlsHome = { parent: els.controls.parentNode, next: els.controls.nextSibling };
-  els.bigDock.appendChild(els.controls);
   els.bigStage.classList.remove("actual");
   els.bigImg.removeAttribute("src");
   generateBigHdrPreview();
@@ -1725,11 +2133,6 @@ function closeBigView() {
   clearTimeout(state.bigPreviewTimer);
   state.bigPreviewSeq++;
   els.bigView.classList.add("hidden");
-  document.body.style.overflow = "";
-  if (state.controlsHome && state.controlsHome.parent) {
-    state.controlsHome.parent.insertBefore(els.controls, state.controlsHome.next);
-  }
-  state.controlsHome = null;
   const old = state.bigPreviewUrl;
   state.bigPreviewUrl = null;
   els.bigImg.removeAttribute("src");
@@ -1741,43 +2144,52 @@ function closeBigView() {
 async function exportHdr() {
   if (!state.bitmap || state.busy) return;
   const params = readParams();
+  const opts = readExportOpts();
   if (params.strength <= 0) {
-    setStatus("强度为 0：结果与原图完全相同，无需导出。请把强度调大。", true);
+    setExportStatus("强度为 0：结果与原图完全相同，无需导出。请把强度调大。", true);
+    return;
+  }
+  if (opts.watermark.type === "image" && !state.wmLogoBitmap) {
+    setExportStatus("请先选择 Logo 图片。", true);
+    return;
+  }
+  if (opts.watermark.type === "text" && !(opts.watermark.text || "").trim()) {
+    setExportStatus("请输入水印文字。", true);
     return;
   }
   state.busy = true;
-  els.exportBtn.disabled = true;
-  els.exportBtn.textContent = "处理中…";
-  setStatus("正在生成增益图（大图可能需要几秒）…");
+  els.exportStart.disabled = true;
+  els.exportStart.textContent = "处理中…";
+  setExportStatus("正在生成…");
+  setStatus("正在生成（导出设置生效中）…");
   const t0 = performance.now();
   try {
-    const gainScale = params.gainScale || 1;
+    const needRe = needReencodeForExport(params, opts);
     const w0 = state.bitmap.width, h0 = state.bitmap.height;
-    if (gainScale >= 1 && w0 * h0 > 24e6) {
-      setStatus("正在生成全分辨率增益图（大图可能需要几秒到十几秒）…");
-    }
-    const outBytes = await buildExportBytes(params);
-    setStatus("正在封装 Ultra HDR 文件…");
-
-    const baseName = state.file.name.replace(/\.[^.]+$/, "");
-    const blob = new Blob([outBytes], { type: "image/jpeg" });
-    triggerDownload(blob, baseName + "_HDR.jpg");
-
+    if (needRe && w0 * h0 > 24e6) setExportStatus("正在重编码大图底图（可能需要几秒）…");
+    else if ((params.gainScale || 1) >= 1 && w0 * h0 > 24e6) setExportStatus("正在生成全分辨率增益图（大图可能需要几秒到十几秒）…");
+    const outBytes = await buildExportBytes(params, opts);
+    const filename = downloadFileName(opts);
+    triggerDownload(new Blob([outBytes], { type: "image/jpeg" }), filename);
     const ms = Math.round(performance.now() - t0);
     updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, outBytes.length);
+    const extras = [];
+    if (needRe) extras.push(`底图重编码 q=${Math.round(opts.quality)}`);
+    if (opts.watermark.type !== "none") extras.push("水印已加在 SDR 层");
     setStatus(`完成 · 用时 ${ms} ms · 已开始下载`, false);
-
+    setExportStatus(`完成 · ${filename} · ${(outBytes.length / 1024).toFixed(0)} KB · ${ms} ms${extras.length ? " · " + extras.join(" · ") : ""}`);
     els.result.classList.remove("hidden");
-    els.resultText.textContent = `已生成 ${baseName}_HDR.jpg（${(outBytes.length / 1024).toFixed(0)} KB）。` +
-      (gainScale < 1 ? `增益图按 ${gainScale * 100}% 分辨率合成（小细节会弱一些）。` : "") +
-      " 请在四类设备上按下面步骤实测：HDR 屏上高光应比原图更亮，普通屏应与原图一致。";
+    els.resultText.textContent = `已生成 ${filename}（${(outBytes.length / 1024).toFixed(0)} KB）。` +
+      (opts.watermark.type !== "none" ? " 水印添加在 SDR 层，不参与 HDR 提亮。" : "") +
+      " 建议在 HDR 屏和普通屏上各确认一次效果。";
   } catch (e) {
     console.error(e);
+    setExportStatus("失败：" + e.message, true);
     setStatus("失败：" + e.message, true);
   } finally {
     state.busy = false;
-    els.exportBtn.disabled = false;
-    els.exportBtn.textContent = "导出 HDR JPG";
+    els.exportStart.textContent = "开始导出";
+    updateExportInfo();
   }
 }
 
@@ -1842,7 +2254,6 @@ function bindUi() {
     updateParamLabels();
     schedulePreview();
   });
-  if (els.bigViewBtn) els.bigViewBtn.addEventListener("click", openBigView);
   if (els.figHdr) els.figHdr.addEventListener("click", (e) => {
     if (e.target && e.target.closest && e.target.closest("a")) return;
     openBigView();
@@ -1853,13 +2264,49 @@ function bindUi() {
   document.addEventListener("keydown", (e) => {
     if (state.bigPreviewOpen && e.key === "Escape") closeBigView();
   });
-  els.exportBtn.addEventListener("click", exportHdr);
+
+  // 底部导航 + 独立导出界面
+  if (els.editTab) els.editTab.addEventListener("click", () => showScreen("edit"));
+  if (els.exportBtn) els.exportBtn.addEventListener("click", () => showScreen("export"));
+  if (els.previewBtn) els.previewBtn.addEventListener("click", openBigView);
+  if (els.previewFromExport) els.previewFromExport.addEventListener("click", openBigView);
+  if (els.exportBack) els.exportBack.addEventListener("click", () => showScreen("edit"));
+  if (els.exportStart) els.exportStart.addEventListener("click", exportHdr);
+
+  // 导出设置变化
+  [els.exportQuality, els.wmFontSize, els.wmLogoScale, els.wmMargin, els.wmOpacity]
+    .forEach((el) => { if (el) el.addEventListener("input", onExportOptsChanged); });
+  [els.wmType, els.wmPosition].forEach((el) => { if (el) el.addEventListener("change", onExportOptsChanged); });
+  if (els.wmText) els.wmText.addEventListener("input", onExportOptsChanged);
+  if (els.wmColor) els.wmColor.addEventListener("input", onExportOptsChanged);
+  if (els.filenamePrefix) els.filenamePrefix.addEventListener("input", updateExportInfo);
+  if (els.wmLogoFile) els.wmLogoFile.addEventListener("change", async () => {
+    const f = els.wmLogoFile.files && els.wmLogoFile.files[0];
+    if (!f) { state.wmLogoBitmap = null; return; }
+    try {
+      state.wmLogoBitmap = await createImageBitmap(f);
+      onExportOptsChanged();
+    } catch (e) {
+      console.error("Logo 读取失败:", e);
+      setExportStatus("Logo 读取失败：" + e.message, true);
+    }
+  });
   els.resetBtn.addEventListener("click", () => {
+    if (state.bigPreviewOpen) closeBigView();
     state.bitmap && state.bitmap.close && state.bitmap.close();
     state.bitmap = null; state.file = null; state.originalBytes = null; state.previewStats = null;
+    state.wmLogoBitmap = null;
+    state.autoPrefix = "";
+    els.filenamePrefix.value = "";
+    if (els.wmLogoFile) els.wmLogoFile.value = "";
     els.editor.classList.add("hidden");
+    els.exportScreen.classList.add("hidden");
+    els.bottomBar.classList.add("hidden");
     els.result.classList.add("hidden");
     els.file.value = "";
+    state.screen = "edit";
+    updateExportInfo();
+    updateWatermarkUi();
     setStatus("");
   });
 }
@@ -1868,9 +2315,9 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.9",
+  version: "0.10",
   defaultParams: DEFAULT_PARAMS,
-  async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt) {
+  async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
     if (paramsOrStrength == null || typeof paramsOrStrength === "number") {
       params = Object.assign({}, DEFAULT_PARAMS, {
@@ -1895,9 +2342,9 @@ window.__hdrApp = {
     if (inputIsPng) bitmap = flattenOnWhite(bitmap);
     const orientation = inputIsPng ? 1 : (() => { try { return inspectOriginalJpeg(clean).orientation || 1; } catch (e) { return 1; } })();
     const gainScale = params.gainScale || 1;
-    const r = await buildOutputBytesGeneric(bitmap, clean, params, orientation, inputIsPng);
+    const r = await buildOutputBytesGeneric(bitmap, clean, params, orientation, inputIsPng, exportOptsOpt || null);
     bitmap.close && bitmap.close();
-    return { bytes: r.bytes, gainScale, meta: r.meta, params };
+    return { bytes: r.bytes, gainScale, meta: r.meta, params, reencoded: r.reencoded };
   },
 };
 
