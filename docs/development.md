@@ -83,6 +83,9 @@ node tools/test_mobile.js tests/input_synthetic_12mp.jpg
 
 # 导入错误提示 / 缺少 JPEG 结束标记自动修复回归
 node tools/test_load_errors.js
+
+# TIF / TIFF 输入（传入你的 TIFF 文件；不传则尝试 tests/tif/）
+node tools/test_tif.js path/to/a.tif path/to/b.tif
 ```
 
 截图会写到 `tests/` 下（已在 `.gitignore` 中忽略）。脚本覆盖底部导航、全屏成品预览、独立导出界面（直通质量禁用 / 水印触发重编码）、水印导出，最后还会把导出的 HDR 图再次上传，验证"已含增益图输入会被拒绝"的回归。

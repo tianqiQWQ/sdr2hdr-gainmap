@@ -2,6 +2,16 @@
 
 本项目的版本更新记录。从 v0.7 起，页面版本号下方会固定显示一行"本次更新"小字（每次发版同步此处）。
 
+## v0.15 — 2026-10
+
+- **新增 TIF / TIFF 输入**：内置精简 TIFF 解码器（无第三方依赖），可读取 16-bit / 8-bit、RGB / 灰度、
+  无压缩 / LZW / Deflate / PackBits、Predictor=2、Strip 与 Tiled TIFF
+- TIF 会像 PNG 一样自动转成 JPEG 底图（16-bit → 8-bit，颜色按 sRGB 解释），导出质量滑块生效
+- 解码时主界面显示进度（大图 LZW 约十几秒）；完成后提示 TIF 的元数据限制
+- 不支持的 TIFF（BigTIFF、CMYK、浮点、JPEG 压缩等）会给出明确错误，不会静默失败
+- 输入格式提示、拖拽区、文件选择和文档已同步；新增 `tools/test_tif.js` 测试脚本
+- 用 7680×4320 的 199MB 无压缩 / 195MB LZW 16-bit Lightroom 导出 TIF 实测通过
+
 ## v0.14 — 2026-10
 
 - **整体曝光改为纯 HDR 实现**：只写入增益图，不再重编码/提亮 SDR 底图；普通屏看到的仍是原始 SDR 字节

@@ -7,6 +7,7 @@
 - 单文件 `index.html`，零依赖、离线可用（推荐 Chrome / Edge / Safari）
 - 输出为真实 Ultra HDR JPG（主图 + 增益图 + XMP/MPF 元数据），可在 Chrome / Edge / iOS 18+ / macOS 等支持设备上以 HDR 显示
 - JPG 输入时原始字节完整保留（EXIF/ICC 不动），只是追加增益图
+- **TIF / TIFF 输入**：内置解码器（16-bit / 8-bit、无压缩 / LZW / Deflate / PackBits），自动转 JPEG 底图
 - 提供 HDR 参数：整体曝光、HDR 强度、提亮起点、细节增强、彩色高光、过渡曲线、细节尺度、通透感、人像保护、增益图分辨率
 - 界面参考 Lightroom：**左侧大图预览 + 右侧直方图/参数面板**，底部导航「编辑 / 成品预览 / 导出」
 - **直方图**：平滑 RGB 通道 + 亮度曲线，铺满整个卡片；悬停查看亮度/提亮档数与像素占比
@@ -43,9 +44,9 @@ https://tianqiQWQ.github.io/sdr2hdr-gainmap/
 |---|---|
 | ![导出界面](assets/screenshots/export.png) | ![整体曝光](assets/screenshots/exposure-mode.png) |
 
-| 手机端（单图 + 参数条） | 手机端参数面板 |
+| TIF / TIFF 输入（16-bit 自动转 JPEG 底图） | 手机端参数面板 |
 |---|---|
-| ![手机端](assets/screenshots/mobile.png) | ![手机参数面板](assets/screenshots/mobile-sheet.png) |
+| ![TIF 输入](assets/screenshots/tif.png) | ![手机参数面板](assets/screenshots/mobile-sheet.png) |
 
 | SDR/HDR 对比拼图（导出设置） | 对比拼图成品预览 |
 |---|---|
@@ -90,7 +91,8 @@ https://tianqiQWQ.github.io/sdr2hdr-gainmap/
 
 ## 输入 / 输出格式
 
-- **输入**：JPG（原始字节保留，推荐）；PNG（自动转 JPEG 底图，透明区域铺白、16-bit 降为 8-bit、不保留 PNG 元数据）
+- **输入**：JPG（原始字节保留，推荐）；PNG（自动转 JPEG 底图，透明区域铺白、16-bit 降为 8-bit、不保留 PNG 元数据）；
+  **TIF / TIFF**（内置解码：8/16-bit、无压缩 / LZW / Deflate / PackBits、Strip/Tiled；自动转 JPEG 底图，16-bit→8-bit，EXIF/XMP 不保留，颜色按 sRGB 解释）
 - **输出**：`.jpg`，Ultra HDR 兼容的"主图 + 增益图"JPEG。不支持的软件/平台会把它当普通 JPG 显示（内容为 SDR 主图），文件不会损坏
 
 ## 为什么需要"成品预览"
@@ -150,6 +152,8 @@ assets/screenshots/        界面截图（程序化合成图，无第三方素�
 - 文件体积会增加（通常 +15%～100%，取决于题材与增益图分辨率）
 - 增益图依赖浏览器/相册/系统的支持；部分分享链路会剥离元数据
 - 人像保护是基于肤色的启发式检测，暖色物体可能被轻微误判
+- TIF 解码为内置实现：不支持 BigTIFF、JPEG 压缩 TIFF、CMYK / 浮点 TIFF、多页 TIFF（只读第一页）；
+  199MB 级 LZW TIF 在本机约 17 秒，建议桌面处理；16-bit 转 8-bit 会有 ±1/255 的量化差异
 - 直方图与 SDR 屏预览是近似示意，最终以 HDR 屏为准
 
 ## 许可证与致谢

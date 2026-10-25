@@ -77,6 +77,7 @@ g       = g_base * (1 - portraitWeight * skinMask)   （人像保护）
 | JPG 普通模式（默认） | **原图字节逐字节透传** | 高光增益 + 可选整体曝光 | 希望 SDR 回退与原始导出完全一致 |
 | 整体曝光（EV>0） | **仍然原图字节透传** | 曝光提亮（Offset 补偿）+ 可选高光增强 | 只想在 HDR 屏上整体提亮，不修改原图 |
 | PNG 输入 / 水印 / 对比拼图 | 重编码为 JPEG（透明铺白、水印等） | 按参数生成 | PNG / 水印 / 分享拼图 |
+| TIF / TIFF 输入 | 内置 TIFF 解码 → 8-bit canvas → JPEG 底图 | 按参数生成 | 16-bit 摄影 TIFF、Lightroom 导出 TIFF |
 
 ## 为什么普通网页预览看不到 HDR
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDR → HDR 转换器（本地网页版）v0.14</title>
+<title>SDR → HDR 转换器（本地网页版）v0.15</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -80,6 +80,8 @@
   }
   .load-error b { color: #ffd7a1; }
   .load-error .sub { margin-top: 6px; color: #c9b298; font-size: 12.5px; line-height: 1.5; }
+  .load-error.info { border: 1px solid #2c4a6e; border-left: 4px solid var(--accent); background: #101b2b; color: #cfe2ff; }
+  .load-error.info b { color: #9ecbff; }
   .drop.compact strong { font-size: 13px; margin-bottom: 0; }
   .drop.compact span { display: none; }
   .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 0; background: #0b0d11;
@@ -283,17 +285,17 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.14 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.14 更新：整体曝光改为只作用于 HDR（SDR 底图字节不变，暗部做 Offset 补偿）；新增“仅整体曝光”开关</div>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.15 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.15 更新：新增 TIF / TIFF 输入（内置解码，支持 16-bit、LZW/无压缩/Deflate，自动转 JPEG 底图）</div>
   <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
      <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
 </header>
 <main>
   <div class="drop" id="drop" tabindex="0" role="button">
-    <strong>把 JPG / PNG 拖到这里，或点击选择文件</strong>
-    <span>支持大图（4500 万像素级）；PNG 会自动转成 JPEG 底图（透明铺白）；增益图默认全分辨率，也可切半分辨率</span>
+    <strong>把 JPG / PNG / TIF 拖到这里，或点击选择文件</strong>
+    <span>支持大图（4500 万像素级）；PNG / TIF 会自动转成 JPEG 底图（TIF 支持 16-bit，转 8-bit；透明铺白）</span>
   </div>
-  <input type="file" id="file" accept="image/jpeg,image/png" class="hidden">
+  <input type="file" id="file" accept="image/jpeg,image/png,image/tiff,.tif,.tiff" class="hidden">
   <div id="loadError" class="load-error hidden" role="alert"></div>
 
   <section id="editor" class="hidden">
@@ -1354,6 +1356,7 @@ const state = {
   sdrBaseKey: null,
   orientation: 1,
   isPng: false,
+  isTiff: false,
   screen: "edit",
   autoPrefix: "",
   wmLogoBitmap: null,
@@ -1638,6 +1641,8 @@ function updateSdrCaption() {
   const ev = parseFloat(els.exposureEv.value) || 0;
   if (ev > 0.001) {
     els.sdrCaption.textContent = "SDR 原图（保持不变）—— 普通屏 / 旧软件看到的就是它；整体曝光只作用于 HDR 显示，不会修改底图";
+  } else if (state.isTiff) {
+    els.sdrCaption.textContent = "SDR 底图（TIF 已转成 JPEG）—— 普通屏 / 旧软件看到的就是它；HDR 屏在此基础上高光再增强";
   } else if (state.isPng) {
     els.sdrCaption.textContent = "SDR 底图（PNG 已转成 JPEG）—— 普通屏 / 旧软件看到的就是它；HDR 屏在此基础上高光再增强";
   } else {
@@ -1685,7 +1690,7 @@ function updateMetaText(previewDims, outSize) {
   const M = 3.0 * (p.strength / 100);
   const lines = [
     `原图：<b>${state.bitmap.width}×${state.bitmap.height}</b>（${(px / 1e6).toFixed(1)} MP，${(((state.file && state.file.size) || b.length) / 1024).toFixed(0)} KB）`,
-    `输入格式：<b>${state.isPng ? "PNG → JPEG 底图（透明铺白、16-bit 降 8-bit）" : "JPG（原字节保留）"}</b>`,
+    `输入格式：<b>${state.isTiff ? "TIF → JPEG 底图（16-bit 降 8-bit）" : state.isPng ? "PNG → JPEG 底图（透明铺白、16-bit 降 8-bit）" : "JPG（原字节保留）"}</b>`,
     `增益图：<b>${gw}×${gh}</b>（${(p.gainScale * 100).toFixed(0)}% 分辨率 · 小细节增强 · JPEG q=${JPEG_QUALITY.toFixed(2)}）`,
     `本机 HDR 渲染：<b>${hdrSupportText()}</b>`,
     `HDR 最大提升：<b>${Math.pow(2, M).toFixed(2)}×</b>（${M.toFixed(2)} 档）`,
@@ -1745,9 +1750,375 @@ function flattenOnWhite(source) {
   return c;
 }
 
+
+/* ============================================================
+ * TIF / TIFF 解码（内置精简解码器，无第三方依赖）
+ * 支持：经典 TIFF（II/MM）、8/16-bit、RGB/灰度、PlanarConfig=1、
+ *       Strip/Tile、无压缩 / LZW / Deflate / PackBits、Predictor=2
+ * ============================================================ */
+function isTiffBytes(bytes) {
+  if (!bytes || bytes.length < 8) return false;
+  const le = bytes[0] === 0x49 && bytes[1] === 0x49;
+  const be = bytes[0] === 0x4D && bytes[1] === 0x4D;
+  if (!le && !be) return false;
+  const magic = le ? (bytes[2] | (bytes[3] << 8)) : ((bytes[2] << 8) | bytes[3]);
+  return magic === 42 || magic === 43;
+}
+
+function tiffParse(bytes) {
+  const le = bytes[0] === 0x49;
+  const u16 = (o) => (le ? bytes[o] | (bytes[o + 1] << 8) : (bytes[o] << 8) | bytes[o + 1]);
+  const u32 = (o) => (le
+    ? ((bytes[o] | (bytes[o + 1] << 8) | (bytes[o + 2] << 16) | (bytes[o + 3] << 24)) >>> 0)
+    : (((bytes[o] << 24) | (bytes[o + 1] << 16) | (bytes[o + 2] << 8) | bytes[o + 3]) >>> 0));
+  const magic = le ? (bytes[2] | (bytes[3] << 8)) : ((bytes[2] << 8) | bytes[3]);
+  if (magic === 43) throw new Error("暂不支持 BigTIFF，请导出为普通 TIFF 或 JPG");
+  if (magic !== 42) throw new Error("不是有效的 TIFF 文件");
+  const ifdOff = u32(4);
+  if (ifdOff + 2 > bytes.length) throw new Error("TIFF 目录偏移损坏");
+  const count = u16(ifdOff);
+  if (count < 1 || count > 2048) throw new Error("TIFF 目录异常");
+  const tags = {};
+  for (let i = 0; i < count; i++) {
+    const e = ifdOff + 2 + i * 12;
+    if (e + 12 > bytes.length) throw new Error("TIFF 目录超出文件范围");
+    const tag = u16(e);
+    const type = u16(e + 2);
+    const n = u32(e + 4);
+    tags[tag] = { type, count: n, valueOff: u32(e + 8), inlineAt: e + 8 };
+  }
+  return { bytes, le, u16, u32, tags };
+}
+const TIFF_TYPE_SIZE = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
+function tiffTag(t, tag) {
+  const e = t.tags[tag];
+  if (!e) return null;
+  const sz = TIFF_TYPE_SIZE[e.type];
+  if (!sz) throw new Error("TIFF 标签类型不支持（" + e.type + "）");
+  const total = sz * e.count;
+  const base = total <= 4 ? e.inlineAt : e.valueOff;
+  if (base + total > t.bytes.length) throw new Error("TIFF 标签数据越界");
+  if (e.type === 2) { // ASCII
+    let str = "";
+    for (let i = 0; i < e.count; i++) str += String.fromCharCode(t.bytes[base + i]);
+    return str.replace(/\0+$/, "");
+  }
+  const out = [];
+  for (let i = 0; i < e.count; i++) {
+    if (e.type === 1 || e.type === 6 || e.type === 7) out.push(t.bytes[base + i]);
+    else if (e.type === 3) out.push(t.u16(base + i * 2));
+    else if (e.type === 4) out.push(t.u32(base + i * 4));
+    else if (e.type === 8) out.push((t.u16(base + i * 2) << 16) >> 16);
+    else if (e.type === 9) out.push(t.u32(base + i * 4) | 0);
+    else throw new Error("TIFF 标签类型不支持（" + e.type + "）");
+  }
+  return out;
+}
+function tiffBytesTag(t, tag) {
+  const e = t.tags[tag];
+  if (!e) return null;
+  const sz = TIFF_TYPE_SIZE[e.type];
+  const total = sz * e.count;
+  const base = total <= 4 ? e.inlineAt : e.valueOff;
+  if (base + total > t.bytes.length) return null;
+  return t.bytes.subarray(base, base + total);
+}
+
+/** TIFF LZW（MSB first，early change） */
+function lzwDecodeTiff(input, expected, outBuf) {
+  const out = outBuf || new Uint8Array(expected);
+  let outPos = 0;
+  let bitPos = 0;
+  let codeSize = 9;
+  let nextCode = 258;
+  let dict = new Array(4096);
+  for (let i = 0; i < 256; i++) dict[i] = [i];
+  const readCode = () => {
+    let code = 0;
+    for (let i = 0; i < codeSize; i++) {
+      const byte = input[bitPos >> 3];
+      if (byte === undefined) return -1;
+      code = (code << 1) | ((byte >> (7 - (bitPos & 7))) & 1);
+      bitPos++;
+    }
+    return code;
+  };
+  let prev = null;
+  while (outPos < expected) {
+    const code = readCode();
+    if (code < 0 || code === 257) break; // EOI
+    if (code === 256) { // Clear
+      codeSize = 9; nextCode = 258; dict = new Array(4096);
+      for (let i = 0; i < 256; i++) dict[i] = [i];
+      prev = null;
+      continue;
+    }
+    let entry;
+    if (code < nextCode && dict[code]) entry = dict[code];
+    else if (code === nextCode && prev) entry = prev.concat(prev[0]);
+    else throw new Error("LZW 数据损坏（码 " + code + "）");
+    for (let i = 0; i < entry.length && outPos < expected; i++) out[outPos++] = entry[i];
+    if (prev && nextCode < 4096) {
+      dict[nextCode++] = prev.concat(entry[0]);
+      if (nextCode >= (1 << codeSize) - 1 && codeSize < 12) codeSize++;
+    }
+    prev = entry;
+  }
+  return out.subarray(0, outPos);
+}
+
+function packBitsDecode(input, expected) {
+  const out = new Uint8Array(expected);
+  let i = 0, o = 0;
+  while (i < input.length && o < expected) {
+    const n = input[i++];
+    if (n < 128) {
+      const cnt = n + 1;
+      for (let k = 0; k < cnt && o < expected; k++) out[o++] = input[i + k] || 0;
+      i += cnt;
+    } else if (n > 128) {
+      const cnt = 257 - n;
+      const v = input[i++] || 0;
+      for (let k = 0; k < cnt && o < expected; k++) out[o++] = v;
+    }
+  }
+  return out;
+}
+
+async function inflateTiff(input, expected) {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("浏览器不支持 Deflate 解压，无法读取该 TIFF（请换 Chrome / Edge / Safari 新版）");
+  }
+  const stream = new Blob([input]).stream().pipeThrough(new DecompressionStream("deflate"));
+  const buf = await new Response(stream).arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+/** 读取 ICC 的 desc 文本（仅用于判断是否 sRGB，不保留 ICC） */
+function iccDescription(icc) {
+  if (!icc || icc.length < 132) return "";
+  try {
+    const dv = new DataView(icc.buffer, icc.byteOffset, icc.byteLength);
+    const n = dv.getUint32(128);
+    for (let i = 0; i < n && 132 + i * 12 + 12 <= icc.length; i++) {
+      const p = 132 + i * 12;
+      if (dv.getUint32(p) === 0x64657363) { // 'desc'
+        const off = dv.getUint32(p + 4);
+        if (off + 12 > icc.length) return "";
+        const cnt = dv.getUint32(off + 8);
+        let str = "";
+        for (let k = 0; k < cnt && off + 12 + k < icc.length; k++) {
+          const c = icc[off + 12 + k];
+          if (c === 0) break;
+          str += String.fromCharCode(c);
+        }
+        return str.trim();
+      }
+    }
+  } catch (e) { /* ignore */ }
+  return "";
+}
+
+/**
+ * 把 TIFF 解码为 canvas（8-bit RGBA，显示为 sRGB）
+ * onProgress(percent) 用于界面提示
+ */
+async function decodeTiffCanvas(bytes, onProgress) {
+  const t = tiffParse(bytes);
+  const one = (tag, def) => {
+    const v = tiffTag(t, tag);
+    return v && v.length ? v[0] : def;
+  };
+  const width = one(256, 0);
+  const height = one(257, 0);
+  if (!width || !height) throw new Error("TIFF 缺少图像尺寸");
+  const bitsArr = tiffTag(t, 258) || [8];
+  const bps = bitsArr[0];
+  const compression = one(259, 1);
+  const photometric = one(262, 2);
+  const spp = one(277, 1);
+  const rowsPerStrip = Math.min(height, one(278, height) || height);
+  const planar = one(284, 1);
+  const predictor = one(317, 1);
+  const orientation = one(274, 1);
+  const sampleFormats = tiffTag(t, 339);
+  if (sampleFormats && sampleFormats.some((v) => v !== 1)) {
+    throw new Error("暂不支持浮点 / 有符号样式的 TIFF（SampleFormat=" + sampleFormats.join(",") + "）");
+  }
+  if (planar !== 1) throw new Error("暂不支持 PlanarConfiguration=2 的 TIFF");
+  if (bps !== 8 && bps !== 16) throw new Error("暂不支持 " + bps + "-bit TIFF（仅支持 8/16-bit）");
+  if (spp < 1 || spp > 4) throw new Error("暂不支持 " + spp + " 通道的 TIFF");
+  if (photometric !== 0 && photometric !== 1 && photometric !== 2) {
+    throw new Error("暂不支持 PhotometricInterpretation=" + photometric + " 的 TIFF");
+  }
+  if (![1, 5, 8, 32946, 32773].includes(compression)) {
+    throw new Error("暂不支持该 TIFF 压缩方式（" + compression + "），请在 Lightroom/PS 里导出为无压缩或 LZW TIFF");
+  }
+
+  const bytesPerSample = bps / 8;
+  const bytesPerPixel = spp * bytesPerSample;
+  const rowBytes = width * bytesPerPixel;
+  const canvas = document.createElement("canvas");
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const BLOCK_ROWS = 32;
+  let block = new Uint8ClampedArray(width * BLOCK_ROWS * 4);
+  let blockRow = 0, blockY = 0;
+
+  const flushBlock = () => {
+    if (blockRow > 0) {
+      const need = width * blockRow * 4;
+      const data = need === block.length ? block : block.subarray(0, need);
+      ctx.putImageData(new ImageData(data, width, blockRow), 0, blockY);
+      blockY += blockRow;
+      blockRow = 0;
+    }
+  };
+
+  const writeRow = (data, rowStart) => {
+    const rowIndex = blockRow;
+    const off = rowIndex * width * 4;
+    let prev0 = 0, prev1 = 0, prev2 = 0, prev3 = 0;
+    const mask = bps === 16 ? 0xFFFF : 0xFF;
+    for (let x = 0; x < width; x++) {
+      const base = rowStart + x * bytesPerPixel;
+      let s0, s1, s2, s3;
+      if (bps === 16) {
+        if (t.le) {
+          s0 = data[base] | (data[base + 1] << 8);
+          s1 = spp > 1 ? (data[base + 2] | (data[base + 3] << 8)) : s0;
+          s2 = spp > 2 ? (data[base + 4] | (data[base + 5] << 8)) : s0;
+          s3 = spp > 3 ? (data[base + 6] | (data[base + 7] << 8)) : 0;
+        } else {
+          s0 = (data[base] << 8) | data[base + 1];
+          s1 = spp > 1 ? ((data[base + 2] << 8) | data[base + 3]) : s0;
+          s2 = spp > 2 ? ((data[base + 4] << 8) | data[base + 5]) : s0;
+          s3 = spp > 3 ? ((data[base + 6] << 8) | data[base + 7]) : 0;
+        }
+      } else {
+        s0 = data[base];
+        s1 = spp > 1 ? data[base + 1] : s0;
+        s2 = spp > 2 ? data[base + 2] : s0;
+        s3 = spp > 3 ? data[base + 3] : 0;
+      }
+      if (predictor === 2) {
+        s0 = (s0 + prev0) & mask; prev0 = s0;
+        if (spp > 1) { s1 = (s1 + prev1) & mask; prev1 = s1; }
+        if (spp > 2) { s2 = (s2 + prev2) & mask; prev2 = s2; }
+        if (spp > 3) { s3 = (s3 + prev3) & mask; prev3 = s3; }
+      }
+      let r, g, b;
+      if (photometric === 2 && spp >= 3) {
+        r = s0; g = s1; b = s2;
+      } else {
+        let gray = s0;
+        if (photometric === 0) gray = mask - gray;
+        r = g = b = gray;
+      }
+      const conv = bps === 16 ? (v) => Math.round(v / 257) : (v) => v;
+      const p = off + x * 4;
+      block[p] = conv(r); block[p + 1] = conv(g); block[p + 2] = conv(b); block[p + 3] = 255;
+    }
+    blockRow++;
+    if (blockRow >= BLOCK_ROWS) flushBlock();
+  };
+
+  // 分块（tiled）或条带（strip）
+  const tileW = one(322, 0), tileH = one(323, 0);
+  const tileOffsets = tiffTag(t, 324), tileCounts = tiffTag(t, 325);
+  let strips = tiffTag(t, 273), stripCounts = tiffTag(t, 279);
+  let tiled = false;
+  if ((!strips || !stripCounts) && tileOffsets && tileCounts) {
+    tiled = true;
+    strips = tileOffsets; stripCounts = tileCounts;
+    if (!tileW || !tileH) throw new Error("分块 TIFF 缺少 TileWidth/TileLength");
+  }
+  if (!strips || !stripCounts) throw new Error("TIFF 缺少图像数据（Strip/Tile）");
+
+  const maxExpected = tiled ? tileW * tileH * bytesPerPixel : rowBytes * Math.min(rowsPerStrip, height);
+  const stripBuf = compression === 5 ? new Uint8Array(maxExpected) : null;
+  const tilesAcross = tiled ? Math.ceil(width / tileW) : 0;
+  const tilesDown = tiled ? Math.ceil(height / tileH) : 1;
+  const nPieces = tiled ? tileOffsets.length : strips.length;
+  const icc = tiffBytesTag(t, 34675);
+  const tiffWarnings = [];
+  if (orientation && orientation !== 1) tiffWarnings.push("TIF 带方向标记（Orientation=" + orientation + "），当前按未旋转处理，画面方向可能不对");
+  if (icc) {
+    const desc = iccDescription(icc);
+    if (desc && !/sRGB/i.test(desc)) tiffWarnings.push("TIF 色彩配置为「" + desc + "」而非 sRGB；浏览器按 sRGB 解释，颜色可能偏移");
+  }
+
+  let doneRows = 0;
+  for (let pi = 0; pi < nPieces; pi++) {
+    const off = strips[pi], cnt = stripCounts[pi];
+    if (off + cnt > bytes.length) throw new Error("TIFF 图像数据越界");
+    const raw = bytes.subarray(off, off + cnt);
+    const rowsThis = tiled ? tileH : Math.min(rowsPerStrip, height - doneRows);
+    const expected = tiled ? tileW * tileH * bytesPerPixel : rowsThis * rowBytes;
+    let data;
+    if (compression === 1) data = raw;
+    else if (compression === 5) data = lzwDecodeTiff(raw, expected, stripBuf);
+    else if (compression === 8 || compression === 32946) data = await inflateTiff(raw, expected);
+    else if (compression === 32773) data = packBitsDecode(raw, expected);
+    else throw new Error("TIFF 压缩方式不支持");
+    if (!data || data.length < expected) {
+      // 有些 LZW 输出会少几字节；按可用数据继续解码，最后统一检查
+      if (!data) throw new Error("TIFF 解码数据为空");
+    }
+    if (tiled) {
+      const tileX = (pi % tilesAcross) * tileW;
+      const tileY = Math.floor(pi / tilesAcross) * tileH;
+      // 分块：逐行写入对应画布区域
+      for (let r = 0; r < tileH && tileY + r < height; r++) {
+        const rowStart = r * tileW * bytesPerPixel;
+        // 这里直接写到一个临时行块：用 1 行 ImageData 写入画布
+        const rowImg = new ImageData(Math.min(tileW, width - tileX), 1);
+        const rd = rowImg.data;
+        let prev0 = 0, prev1 = 0, prev2 = 0;
+        for (let x = 0; x < tileW && tileX + x < width; x++) {
+          const base = rowStart + x * bytesPerPixel;
+          const read16 = (o) => t.le ? (data[o] | (data[o + 1] << 8)) : ((data[o] << 8) | data[o + 1]);
+          const get = (c) => {
+            const o = base + c * bytesPerSample;
+            return bps === 16 ? read16(o) : data[o];
+          };
+          let s0 = get(0), s1 = spp > 1 ? get(1) : s0, s2 = spp > 2 ? get(2) : s0;
+          if (predictor === 2) {
+            const mask = bps === 16 ? 0xFFFF : 0xFF;
+            s0 = (s0 + prev0) & mask; prev0 = s0;
+            if (spp > 1) { s1 = (s1 + prev1) & mask; prev1 = s1; }
+            if (spp > 2) { s2 = (s2 + prev2) & mask; prev2 = s2; }
+          }
+          let rr, gg, bb;
+          const mask = bps === 16 ? 65535 : 255;
+          if (photometric === 2 && spp >= 3) { rr = s0; gg = s1; bb = s2; }
+          else { let gray = photometric === 0 ? mask - s0 : s0; rr = gg = bb = gray; }
+          const conv = bps === 16 ? (v) => Math.round(v / 257) : (v) => v;
+          rd[x * 4] = conv(rr); rd[x * 4 + 1] = conv(gg); rd[x * 4 + 2] = conv(bb); rd[x * 4 + 3] = 255;
+        }
+        ctx.putImageData(rowImg, tileX, tileY + r);
+      }
+      doneRows = height;
+    } else {
+      for (let r = 0; r < rowsThis; r++) {
+        writeRow(data, r * rowBytes);
+        doneRows++;
+      }
+      // 不在这里 flush：LZW 常见 RowsPerStrip=1，按块累积后再 putImageData
+
+    }
+    if (onProgress) onProgress(Math.min(99, Math.round((tiled ? (pi + 1) / nPieces : doneRows / height) * 100)));
+    if ((pi & 15) === 15) await new Promise((res) => setTimeout(res, 0));
+  }
+  flushBlock();
+  if (onProgress) onProgress(100);
+  return { canvas, width, height, orientation, compression, bits: bps, icc, iccDescription: icc ? iccDescription(icc) : "", warnings: tiffWarnings };
+}
+
 function showLoadBanner(html) {
   if (!els.loadError) return;
   if (els.result) els.result.classList.add("hidden");
+  els.loadError.className = "load-error";
   els.loadError.innerHTML = html +
     "<div class=\"sub\" style=\"margin-top:10px\"><button class=\"secondary sm le-close\" type=\"button\">关闭提示</button></div>";
   els.loadError.classList.remove("hidden");
@@ -1778,6 +2149,21 @@ function showLoadWarning(text) {
   showLoadBanner("<b>⚠ " + escapeHtml(text) + "</b>");
 }
 
+function showLoadInfo(text) {
+  if (!els.loadError) return;
+  els.loadError.className = "load-error info";
+  els.loadError.innerHTML = "<b>" + escapeHtml(text) + "</b>";
+  els.loadError.classList.remove("hidden");
+}
+function updateLoadInfo(text) {
+  if (!els.loadError) return;
+  if (els.loadError.classList.contains("hidden")) showLoadInfo(text);
+  else {
+    els.loadError.className = "load-error info";
+    els.loadError.innerHTML = "<b>" + escapeHtml(text) + "</b>";
+  }
+}
+
 function hideLoadError() {
   if (els.loadError) els.loadError.classList.add("hidden");
 }
@@ -1795,27 +2181,47 @@ async function loadFileCore(file) {
   if (!file) return;
   const isJpeg = /jpe?g$/i.test(file.name) || file.type === "image/jpeg";
   const isPng = /\.png$/i.test(file.name) || file.type === "image/png";
-  if (!isJpeg && !isPng) {
-    showLoadFailure("不支持的文件格式", "目前支持 JPG / PNG 文件（其他格式请先导出为 JPG 或 PNG）。");
+  const isTiff = /\.tiff?$/i.test(file.name) || file.type === "image/tiff";
+  if (!isJpeg && !isPng && !isTiff) {
+    showLoadFailure("不支持的文件格式", "目前支持 JPG / PNG / TIF（TIFF）文件。");
     return;
   }
   hideLoadError();
   if (els.result) els.result.classList.add("hidden");
   setStatus("正在读取文件…");
   const rawBytes = new Uint8Array(await file.arrayBuffer());
-  const inputIsPng = isPng || isPngBytes(rawBytes);
-  if (!inputIsPng) {
-    const hdrCheck = detectExistingHdr(rawBytes);
-    if (hdrCheck.isHdr) {
-      showHdrRejected(hdrCheck);
-      return;
-    }
-  }
+  const inputIsTiff = isTiff || isTiffBytes(rawBytes);
+  const inputIsPng = !inputIsTiff && (isPng || isPngBytes(rawBytes));
   let bytes = rawBytes;
   let stripped = { mpf: 0, xmp: 0 };
   let info = null;
   let repairedEoi = false;
-  if (!inputIsPng) {
+  let tiffInfo = null;
+  let bitmap;
+  if (inputIsTiff) {
+    showLoadInfo("正在解码 TIF…（大图可能需要十几秒，请稍候）");
+    await new Promise((r) => setTimeout(r, 30));
+    try {
+      tiffInfo = await decodeTiffCanvas(rawBytes, (pct) => {
+        updateLoadInfo("正在解码 TIF… " + pct + "%");
+      });
+    } catch (e) {
+      console.error("TIF 解码失败:", e);
+      showLoadFailure("无法解码 TIF 文件", e.message || String(e));
+      return;
+    }
+    bitmap = tiffInfo.canvas;
+    hideLoadError();
+  } else {
+    if (!inputIsPng) {
+      const hdrCheck = detectExistingHdr(rawBytes);
+      if (hdrCheck.isHdr) {
+        showHdrRejected(hdrCheck);
+        return;
+      }
+    }
+  }
+  if (!inputIsTiff && !inputIsPng) {
     const stripRes = stripStaleHdrMetadata(rawBytes);
     bytes = stripRes.bytes;
     stripped = stripRes.removed;
@@ -1841,19 +2247,23 @@ async function loadFileCore(file) {
     }
   }
 
-  let bitmap;
-  try { bitmap = await createImageBitmap(new Blob([bytes], { type: inputIsPng ? "image/png" : "image/jpeg" })); } catch (e) {
-    showLoadFailure("无法解码该文件（" + (inputIsPng ? "PNG" : "JPG") + "）", e.message);
-    return;
+  if (!inputIsTiff) {
+    try { bitmap = await createImageBitmap(new Blob([bytes], { type: inputIsPng ? "image/png" : "image/jpeg" })); } catch (e) {
+      showLoadFailure("无法解码该文件（" + (inputIsPng ? "PNG" : "JPG") + "）", e.message);
+      return;
+    }
+    if (inputIsPng) bitmap = flattenOnWhite(bitmap);
   }
-  if (inputIsPng) bitmap = flattenOnWhite(bitmap);
 
   state.file = file;
-  state.originalBytes = bytes;
+  state.originalBytes = inputIsTiff ? new Uint8Array(0) : bytes;
   state.bitmap = bitmap;
   state.isPng = inputIsPng;
+  state.isTiff = inputIsTiff;
   state.previewStats = null;
-  state.orientation = (info && info.orientation) ? info.orientation : 1;
+  state.orientation = inputIsTiff
+    ? ((tiffInfo && tiffInfo.orientation) || 1)
+    : ((info && info.orientation) ? info.orientation : 1);
   state.sdrBaseKey = null;
   hidePressSdr();
 
@@ -1892,6 +2302,11 @@ async function loadFileCore(file) {
 
   const warns = [];
   if (inputIsPng) warns.push("PNG 输入：导出时底图会转成 JPEG（透明区域铺白、16-bit 降为 8-bit、PNG 元数据不保留）");
+  if (inputIsTiff) {
+    warns.push("TIF 输入：导出时底图会转成 JPEG（" + (tiffInfo && tiffInfo.bits === 16 ? "16-bit → 8-bit" : "8-bit") +
+      "；EXIF/XMP 不保留；颜色按 sRGB 解释）");
+    if (tiffInfo && tiffInfo.warnings && tiffInfo.warnings.length) warns.push(...tiffInfo.warnings);
+  }
   if (stripped.mpf || stripped.xmp) {
     const parts = [];
     if (stripped.mpf) parts.push("MPF×" + stripped.mpf);
@@ -2049,7 +2464,7 @@ function watermarkEffective(wm, logoBitmap) {
 
 function needReencodeForExport(params, opts) {
   const logo = (opts && (opts.logoBitmap || state.wmLogoBitmap)) || state.wmLogoBitmap;
-  return !!(opts && opts.outputMode === "compare") || !!state.isPng ||
+  return !!(opts && opts.outputMode === "compare") || !!state.isPng || !!state.isTiff ||
     watermarkEffective(opts && opts.watermark, logo);
 }
 
@@ -2338,7 +2753,7 @@ async function buildOutputBytesGeneric(bitmap, originalBytes, params, orientatio
 /** 按当前参数 + 导出设置生成最终导出字节（成品预览与导出共用） */
 async function buildExportBytes(params, exportOpts) {
   const r = await buildOutputBytesGeneric(
-    state.bitmap, state.originalBytes, params, state.orientation, !!state.isPng, exportOpts
+    state.bitmap, state.originalBytes, params, state.orientation, !!(state.isPng || state.isTiff), exportOpts
   );
   return r.bytes;
 }
@@ -2416,6 +2831,7 @@ function updateExportInfo() {
   if (!needRe) baseMode = "原图直通（字节保留）";
   else if (isCompare) baseMode = "重编码（SDR/HDR 拼图）";
   else if (state.isPng) baseMode = "重编码（PNG → JPEG）";
+  else if (state.isTiff) baseMode = "重编码（TIF → JPEG）";
   else baseMode = "重编码（加水印）";
   const outName = downloadFileName(opts);
   const outDimText = isCompare
@@ -3032,6 +3448,7 @@ function bindUi() {
     state.bitmap && state.bitmap.close && state.bitmap.close();
     state.bitmap = null; state.file = null; state.originalBytes = null; state.previewStats = null;
     state.wmLogoBitmap = null;
+    state.isTiff = false;
     state.autoPrefix = "";
     els.filenamePrefix.value = "";
     if (els.wmLogoFile) els.wmLogoFile.value = "";
@@ -3054,7 +3471,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.14",
+  version: "0.15",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
@@ -3069,19 +3486,30 @@ window.__hdrApp = {
     }
     const raw = new Uint8Array(buffer);
     const inputIsPng = isPngBytes(raw);
-    if (!inputIsPng) {
-      const hdrCheck = detectExistingHdr(raw);
-      if (hdrCheck.isHdr) {
-        throw new Error("输入图片已包含 HDR 增益图（gain map），请改用 SDR 原图：" + hdrCheck.reasons.join("；"));
+    const inputIsTiff = isTiffBytes(raw);
+    let clean = raw;
+    let bitmap;
+    let orientation = 1;
+    if (inputIsTiff) {
+      const t = await decodeTiffCanvas(raw);
+      bitmap = t.canvas;
+      orientation = t.orientation || 1;
+      clean = new Uint8Array(0);
+    } else {
+      if (!inputIsPng) {
+        const hdrCheck = detectExistingHdr(raw);
+        if (hdrCheck.isHdr) {
+          throw new Error("输入图片已包含 HDR 增益图（gain map），请改用 SDR 原图：" + hdrCheck.reasons.join("；"));
+        }
       }
+      clean = inputIsPng ? raw : stripStaleHdrMetadata(raw).bytes;
+      const blob = new Blob([clean], { type: inputIsPng ? "image/png" : "image/jpeg" });
+      bitmap = await createImageBitmap(blob);
+      if (inputIsPng) bitmap = flattenOnWhite(bitmap);
+      orientation = inputIsPng ? 1 : (() => { try { return inspectOriginalJpeg(clean).orientation || 1; } catch (e) { return 1; } })();
     }
-    const clean = inputIsPng ? raw : stripStaleHdrMetadata(raw).bytes;
-    const blob = new Blob([clean], { type: inputIsPng ? "image/png" : "image/jpeg" });
-    let bitmap = await createImageBitmap(blob);
-    if (inputIsPng) bitmap = flattenOnWhite(bitmap);
-    const orientation = inputIsPng ? 1 : (() => { try { return inspectOriginalJpeg(clean).orientation || 1; } catch (e) { return 1; } })();
     const gainScale = params.gainScale || 1;
-    const r = await buildOutputBytesGeneric(bitmap, clean, params, orientation, inputIsPng, exportOptsOpt || null);
+    const r = await buildOutputBytesGeneric(bitmap, clean, params, orientation, !!(inputIsPng || inputIsTiff), exportOptsOpt || null);
     bitmap.close && bitmap.close();
     return { bytes: r.bytes, gainScale, meta: r.meta, params, reencoded: r.reencoded };
   },
