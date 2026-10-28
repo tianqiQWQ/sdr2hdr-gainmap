@@ -78,7 +78,7 @@ node tools/test_ui.js tests/input_synthetic_12mp.jpg
 # 非 macOS 指定浏览器路径
 CHROME_PATH=/usr/bin/google-chrome node tools/test_ui.js tests/input_synthetic_12mp.jpg
 
-# 移动端界面回归（390×844：单图 + 参数条 + 长按 SDR + 导出）
+# 移动端界面回归（390×844：固定布局不滚动 + 参数条上顶 + 长按 SDR + 导出）
 node tools/test_mobile.js tests/input_synthetic_12mp.jpg
 
 # 导入错误提示 / 缺少 JPEG 结束标记自动修复回归

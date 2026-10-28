@@ -30,6 +30,7 @@ const SHOTS = path.join(ROOT, "tests");
 
   const layout = await page.evaluate(() => {
     const disp = (id) => getComputedStyle(document.getElementById(id)).display;
+    const rr = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height), w: Math.round(r.width) }; };
     return {
       figSdr: disp("figSdr"),
       sidePanel: disp("sidePanel"),
@@ -37,6 +38,9 @@ const SHOTS = path.join(ROOT, "tests");
       figHdr: disp("figHdr"),
       chips: document.querySelectorAll("#mChips .m-chip").length,
       dropHidden: getComputedStyle(document.getElementById("drop")).display === "none",
+      scrollH: document.documentElement.scrollHeight,
+      viewH: innerHeight,
+      figRect: rr("figHdr"), canvasRect: rr("cvHdr"), chipsRect: rr("mobileParams"), barRect: rr("bottomBar"),
     };
   });
   console.log("mobile layout:", JSON.stringify(layout));
@@ -45,7 +49,11 @@ const SHOTS = path.join(ROOT, "tests");
   if (layout.mobileParams !== "block") errors.push("mobile parameter bar missing");
   if (layout.chips < 6) errors.push("mobile chips missing");
   if (!layout.dropHidden) errors.push("drop zone should be hidden after load on mobile");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v12_mobile_edit.png") });
+  if (layout.scrollH !== layout.viewH) errors.push("mobile editor page should not scroll");
+  if (layout.figRect.bottom > layout.chipsRect.top + 1) errors.push("photo area overlaps bottom parameter bar");
+  if (layout.canvasRect.h > layout.figRect.h + 1 || layout.canvasRect.w > layout.figRect.w + 1) errors.push("photo does not fit in viewer");
+  if (layout.barRect.bottom !== layout.viewH) errors.push("bottom nav should be fixed at viewport bottom");
+  await page.screenshot({ path: path.join(SHOTS, "ui_v16_mobile_edit.png") });
 
   // 按住画面 → 显示 SDR，松开恢复
   await page.evaluate(() => {
@@ -79,14 +87,23 @@ const SHOTS = path.join(ROOT, "tests");
   // 点“强度” chip → 展开滑块，调整后同步到桌面隐藏控件
   await page.evaluate(() => [...document.querySelectorAll("#mChips .m-chip")].find((b) => b.dataset.param === "strength").click());
   await new Promise((r) => setTimeout(r, 300));
-  const sheet = await page.evaluate(() => ({
-    visible: !document.getElementById("mSheet").classList.contains("hidden"),
-    rows: document.querySelectorAll("#mSheet .m-row").length,
-    value: document.querySelector("#mSheet input[type=range]").value,
-    nan: document.getElementById("mSheet").innerText.indexOf("NaN") >= 0,
-  }));
+  const sheet = await page.evaluate(() => {
+    const rr = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height) }; };
+    return {
+      visible: !document.getElementById("mSheet").classList.contains("hidden"),
+      rows: document.querySelectorAll("#mSheet .m-row").length,
+      value: document.querySelector("#mSheet input[type=range]").value,
+      nan: document.getElementById("mSheet").innerText.indexOf("NaN") >= 0,
+      scrollH: document.documentElement.scrollHeight,
+      viewH: innerHeight,
+      figHdr: rr("figHdr"), chipsTop: rr("mobileParams").top, barBottom: rr("bottomBar").bottom,
+    };
+  });
   console.log("strength sheet:", JSON.stringify(sheet));
   if (!sheet.visible || sheet.rows !== 1 || sheet.nan) errors.push("mobile sheet state wrong");
+  if (sheet.scrollH !== sheet.viewH) errors.push("sheet should not make the page scroll");
+  if (sheet.figHdr.bottom > sheet.chipsTop + 1) errors.push("sheet should push photo area up, not overlap");
+  if (sheet.barBottom !== sheet.viewH) errors.push("bottom nav moved after sheet opened");
   await page.evaluate(() => {
     const inp = document.querySelector("#mSheet input[type=range]");
     inp.value = "80";
@@ -99,7 +116,7 @@ const SHOTS = path.join(ROOT, "tests");
   }));
   console.log("synced strength:", JSON.stringify(synced));
   if (synced.desktop !== "80" || !synced.chip.includes("80")) errors.push("mobile slider not synced");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v12_mobile_sheet.png") });
+  await page.screenshot({ path: path.join(SHOTS, "ui_v16_mobile_sheet.png") });
 
   // 高级参数面板
   await page.evaluate(() => [...document.querySelectorAll("#mChips .m-chip")].find((b) => b.dataset.param === "advanced").click());
@@ -107,7 +124,7 @@ const SHOTS = path.join(ROOT, "tests");
   const advRows = await page.evaluate(() => document.querySelectorAll("#mSheet .m-row").length);
   console.log("advanced sheet rows:", advRows);
   if (advRows < 5) errors.push("advanced mobile sheet incomplete");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v12_mobile_advanced.png") });
+  await page.screenshot({ path: path.join(SHOTS, "ui_v16_mobile_advanced.png") });
 
   // 导出界面：移动参数条与底栏隐藏
   await page.click("#exportBtn");
@@ -119,7 +136,7 @@ const SHOTS = path.join(ROOT, "tests");
   }));
   console.log("mobile export:", JSON.stringify(exp));
   if (!exp.exportVisible || !exp.chipsHidden || !exp.bottomHidden) errors.push("mobile export screen wrong");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v12_mobile_export.png") });
+  await page.screenshot({ path: path.join(SHOTS, "ui_v16_mobile_export.png") });
 
   console.log("js errors:", errors.length ? errors : "none");
   if (errors.length) process.exitCode = 1;

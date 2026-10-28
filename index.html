@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SDR → HDR 转换器（本地网页版）v0.15</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SDR → HDR 转换器（本地网页版）v0.16</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -89,7 +89,7 @@
     min-height: 100%; align-content: center; }
   .previews.single { grid-template-columns: 1fr; }
   .previews.single #figHdr { display: none; }
-  @media (max-width: 760px) { .previews { grid-template-columns: 1fr; } }
+  @media (max-width: 960px) { .previews { grid-template-columns: 1fr; } }
   figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   figure canvas { display: block; width: 100%; height: auto; max-height: 74vh; object-fit: contain; background: #000; }
   figcaption { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
@@ -206,28 +206,69 @@
   .m-chips::-webkit-scrollbar { display: none; }
   .m-chip { flex: none; background: #232a36; color: var(--fg); border: 1px solid var(--line); border-radius: 16px; padding: 7px 12px; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
   .m-chip.on { border-color: var(--accent); color: var(--accent); background: #1b2537; }
-  @media (max-width: 760px) {
-    html, body { height: auto; }
-    body { display: block; overflow: auto; min-height: 100dvh; }
-    header { padding: 10px 14px 8px; }
+  @media (max-width: 960px) {
+    /* ===== App 式固定布局：顶部栏 + 自适应照片 + 底部参数/导航 ===== */
+    html, body { height: 100%; height: 100dvh; }
+    body {
+      display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+      overscroll-behavior: none;
+    }
+    header {
+      flex: 0 0 auto; padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 16px; margin: 0; line-height: 1.25; }
     header p { display: none; }
-    .ver-note { margin-bottom: 0; }
-    main { padding: 8px 10px 190px; }
-    .app-shell { grid-template-columns: 1fr; height: auto; }
-    .viewer { height: auto; overflow: visible; }
-    .previews { grid-template-columns: 1fr; padding: 6px; min-height: 0; }
+    .ver-note { display: none; }
+    main {
+      flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+      overflow-y: auto; overflow-x: hidden; padding: 4px 8px 4px; justify-content: center;
+    }
+    #editor {
+      flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; height: 100%;
+    }
+    .app-shell { grid-template-columns: 1fr; height: 100%; min-height: 0; display: flex; flex-direction: column; align-items: stretch; }
+    .viewer { flex: 1 1 auto; min-height: 0; height: auto; width: 100%; overflow: hidden; display: flex; }
+    .previews {
+      flex: 1 1 auto; min-height: 0; height: 100%; padding: 4px; margin: 0;
+      display: flex; align-items: center; justify-content: center; grid-template-columns: 1fr;
+      background: #0b0d11; border: 1px solid var(--line); border-radius: 10px;
+    }
     .previews #figSdr { display: none; }
+    .previews.single #figHdr { display: flex; }
+    #figHdr {
+      flex: 1 1 auto; min-height: 0; height: 100%; width: 100%;
+      display: flex; align-items: center; justify-content: center;
+      border: 0; background: #0b0d11; border-radius: 8px; overflow: hidden;
+    }
+    #figHdr > canvas, #figHdr > img {
+      width: auto; height: auto; max-width: 100%; max-height: 100%;
+      object-fit: contain; background: #000;
+    }
+    .press-sdr {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: contain; background: transparent; z-index: 5;
+    }
+    #figHdr figcaption, #figHdr .fig-hint { display: none; }
+    .press-hint { display: block; bottom: 6px; font-size: 10.5px; padding: 3px 8px; }
     .side-panel { display: none; }
-    .mobile-params { display: block; position: fixed; left: 0; right: 0; bottom: 58px; z-index: 59; }
-    .bottom-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
-                  padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px)); gap: 6px; }
-    .bb-btn { padding: 8px 12px; font-size: 12.5px; }
+    .mobile-params {
+      position: static; flex: 0 0 auto; display: block;
+      padding: 4px 8px 0; border-top: 1px solid var(--line); background: var(--panel);
+    }
+    .m-sheet { max-height: 34vh; overflow: auto; margin-bottom: 4px; padding: 7px 10px 8px; }
+    .bottom-bar {
+      position: static; flex: 0 0 auto;
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)); gap: 6px;
+    }
+    .bb-btn { padding: 8px 10px; font-size: 12.5px; }
     .bb-status { display: none; }
     .bb-center { justify-content: center; }
+    .drop { flex: 0 0 auto; margin: auto; width: 100%; max-width: 520px; }
     .drop.compact { margin-bottom: 6px; }
     body.loaded .drop { display: none !important; }
-    #figHdr figcaption, #figHdr .fig-hint { display: none; }
-    .press-hint { display: block; }
+    #exportScreen { flex: 0 0 auto; }
+    .screen { flex: 0 0 auto; overflow: visible; }
   }
 
   /* ===== 底部导航（编辑 / 成品预览 / 导出） ===== */
@@ -285,8 +326,8 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.15 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.15 更新：新增 TIF / TIFF 输入（内置解码，支持 16-bit、LZW/无压缩/Deflate，自动转 JPEG 底图）</div>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.16 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.16 更新：手机端改为固定顶栏 + 底部参数/导航 + 中间自适应照片，调整参数不再需要上下滑动</div>
   <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
      <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
 </header>
@@ -3471,7 +3512,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.15",
+  version: "0.16",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
