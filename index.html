@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SDR → HDR 转换器（本地网页版）v0.21</title>
+<title>SDR → HDR 转换器（本地网页版）v0.22</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -447,8 +447,8 @@
 <body>
 <header>
   <div class="header-text">
-    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.21 · 本地处理，不上传</span></h1>
-    <div class="ver-note">v0.21 更新：新增四种视图（SDR / HDR / 左右对比 / 拉手对比）；支持 HDR 的设备自动使用原生 HDR 渲染</div>
+    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.22 · 本地处理，不上传</span></h1>
+    <div class="ver-note">v0.22 更新：修复日落等明亮暖色被人像保护误判，导致 HDR 预览/增益图太阳外圈黑环的问题</div>
     <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
        <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
   </div>
@@ -1056,7 +1056,9 @@ function skinMask(r, g, b, luma) {
   const cb = -0.1687 * r - 0.3313 * g + 0.5 * b + 128;
   const a = smoothstep(126, 140, cr) * (1 - smoothstep(172, 186, cr));
   const c = smoothstep(68, 82, cb) * (1 - smoothstep(124, 138, cb));
-  return Math.min(1, a * c) * smoothstep(40, 60, luma);
+  // 高亮端淡出：避免把夕阳、明亮暖色高光误判为肤色，导致高光外圈出现低增益“黑环”
+  const hiFade = 1 - smoothstep(190, 225, luma);
+  return Math.min(1, a * c) * smoothstep(40, 60, luma) * hiFade;
 }
 
 /** 由单个像素计算归一化增益 g（0..1） */
@@ -3945,7 +3947,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.21",
+  version: "0.22",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
