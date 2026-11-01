@@ -90,6 +90,9 @@ node tools/test_default_view.js
 # 原生 HDR 预览（强制打开 HDR 路径；HDR效果 / 左右右图 / 拉手右半 / 实时重生成 / 诊断回退）
 node tools/test_native_hdr.js
 
+# 手动肤色保护取色器（默认态 / 取样 / 容差蒙版 / 侧栏双图 / 换图重置）
+node tools/test_skin_picker.js
+
 # TIF / TIFF 输入（传入你的 TIFF 文件；不传则尝试 tests/tif/）
 node tools/test_tif.js path/to/a.tif path/to/b.tif
 ```

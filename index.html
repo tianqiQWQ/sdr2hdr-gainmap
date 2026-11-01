@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SDR → HDR 转换器（本地网页版）v0.22</title>
+<title>SDR → HDR 转换器（本地网页版）v0.23</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -309,15 +309,15 @@
     flex: none; display: flex; align-items: center; gap: 10px;
     padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--panel);
   }
-  .view-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .view-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex: 0 0 auto; }
   .view-seg button {
     background: #171a21; color: var(--muted); border: 0; padding: 7px 14px;
-    font-size: 13px; cursor: pointer;
+    font-size: 13px; cursor: pointer; white-space: nowrap;
   }
   .view-seg button + button { border-left: 1px solid var(--line); }
   .view-seg button[aria-pressed="true"] { background: var(--accent); color: #06121f; font-weight: 600; }
   .view-seg button:disabled { opacity: .4; cursor: default; }
-  .view-hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .view-hint { color: var(--muted); font-size: 12px; margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .stage {
     flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden;
     display: flex; align-items: center; justify-content: center;
@@ -385,6 +385,38 @@
   .view-options { justify-content: space-between; }
   .view-options .sel select { background: #232a36; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font-size: 12px; }
   .hdr-link { padding: 4px 0 0; }
+  .skin-tools {
+    margin-top: 12px; padding: 10px 12px 8px; border: 1px solid var(--line);
+    border-radius: 8px; background: #171a21;
+  }
+  .skin-head { font-size: 12.5px; color: var(--fg); font-weight: 600; margin-bottom: 7px; }
+  .skin-sub { color: var(--muted); font-weight: 400; font-size: 11.5px; margin-left: 6px; }
+  .skin-inline-label { color: var(--muted); font-size: 12px; }
+  .skin-swatches { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 8px; min-height: 30px; }
+  .skin-empty { font-size: 12px; color: var(--muted); }
+  .skin-swatch {
+    width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff4;
+    cursor: pointer; position: relative; flex: none;
+  }
+  .skin-swatch:hover { border-color: #ff6b6b; }
+  .skin-swatch span {
+    position: absolute; right: -6px; top: -6px; width: 15px; height: 15px; border-radius: 50%;
+    background: #111; color: #fff; font-size: 10px; line-height: 15px; text-align: center;
+  }
+  .skin-tol { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .skin-tol input { width: 160px; }
+  .skin-hint { color: var(--muted); font-size: 11.5px; }
+  .skin-mask {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 8; background: transparent !important;
+  }
+  .side-media canvas.skin-mask {
+    max-width: none !important; max-height: none !important;
+    width: auto; height: auto;
+    object-fit: fill !important; background: transparent !important;
+  }
+  .picking, .picking canvas, .picking img { cursor: crosshair !important; }
+  .skin-tools .pick-active { border-color: var(--accent); color: var(--accent); }
   .hdr-link a { color: var(--accent); font-size: 12px; text-decoration: none; }
   .hdr-link a:hover { text-decoration: underline; }
   .viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%;
@@ -447,8 +479,8 @@
 <body>
 <header>
   <div class="header-text">
-    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.22 · 本地处理，不上传</span></h1>
-    <div class="ver-note">v0.22 更新：修复日落等明亮暖色被人像保护误判，导致 HDR 预览/增益图太阳外圈黑环的问题</div>
+    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.23 · 本地处理，不上传</span></h1>
+    <div class="ver-note">v0.23 更新：新增手动肤色保护取色器（默认关闭，最多 5 个取样、颜色容差、保护范围蒙版）</div>
     <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
        <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
   </div>
@@ -483,18 +515,20 @@
           <div class="splitbar hidden" id="splitBar"><i></i></div>
           <span class="view-tag hidden" id="tagL">SDR</span>
           <span class="view-tag hidden" id="tagR">HDR</span>
+          <canvas id="skinMaskFrame" class="skin-mask hidden"></canvas>
           <div class="press-hint">按住画面看 SDR · 点按看成品预览</div>
         </div>
       </div>
       <div class="side-view hidden" id="sideView">
         <figure class="side-pane">
-          <div class="side-media"><canvas id="cvSideSdr"></canvas></div>
+          <div class="side-media"><canvas id="cvSideSdr"></canvas><canvas id="skinMaskSideL" class="skin-mask hidden"></canvas></div>
           <figcaption>SDR 原图</figcaption>
         </figure>
         <figure class="side-pane">
           <div class="side-media">
             <canvas id="cvSideHdr"></canvas>
             <img id="sideHdrImg" class="hidden" alt="HDR 效果">
+            <canvas id="skinMaskSideR" class="skin-mask hidden"></canvas>
           </div>
           <figcaption id="sideHdrCaption">HDR 效果</figcaption>
         </figure>
@@ -545,9 +579,7 @@
           <!-- 高光柔化已随“整体曝光只作用于 HDR”改动移除（不再修改底图，无需滚降） -->
         </div>
         <div class="ctl-row" style="margin-top:12px">
-          <label class="chk"><input type="checkbox" id="portrait" checked> 人像保护</label>
-          <input type="range" id="portraitStrength" min="0" max="100" step="1" value="50" style="flex:0 1 220px">
-          <span class="val" id="portraitVal" style="min-width:70px"></span>
+          <label class="chk"><input type="checkbox" id="portrait"> 自动肤色检测（旧）</label>
           <label class="sel">增益图分辨率
             <select id="gainScale">
               <option value="1" selected>全分辨率（细节最好）</option>
@@ -556,7 +588,34 @@
           </label>
           <button id="resetParams" class="secondary">恢复默认参数</button>
         </div>
+
       </details>
+
+        <div class="skin-tools">
+          <div class="skin-head">手动肤色保护 · 取色器 <span class="skin-sub">默认关闭；需要时吸取画面中的肤色</span></div>
+          <div class="ctl-row">
+            <label class="chk"><input type="checkbox" id="skinManual"> 启用手动保护</label>
+            <button type="button" id="skinPickBtn" class="secondary">吸取肤色</button>
+            <button type="button" id="skinClearBtn" class="secondary">清空取样</button>
+            <label class="chk"><input type="checkbox" id="skinShowMask"> 显示保护范围</label>
+          </div>
+          <div id="skinSwatches" class="skin-swatches"><span class="skin-empty">还没有取样</span></div>
+          <div class="ctl-row">
+            <label class="skin-tol">颜色容差
+              <input type="range" id="skinTolerance" min="0" max="100" step="1" value="30">
+              <span class="val" id="skinToleranceVal">30</span>
+            </label>
+            <span class="skin-hint">最多 5 个取样点；绿色蒙版=被保护区域</span>
+          </div>
+          <div class="ctl-row">
+            <label class="skin-tol">肤色保护强度
+              <input type="range" id="portraitStrength" min="0" max="100" step="1" value="50">
+              <span class="val" id="portraitVal">50%</span>
+            </label>
+            <span class="skin-hint">手动与自动检测共用</span>
+          </div>
+        </div>
+
 
       <div class="meta" id="meta"></div>
       <div class="note" id="note">
@@ -975,8 +1034,8 @@ const DEFAULT_PARAMS = {
   curvePow: 1.6,         // 1.0-3.0：过渡曲线（大=陡）
   detailRadius: 16,      // 4-40 px：细节判断半径
   clarity: 15,           // 0-100：局部对比/通透感
-  portrait: true,        // 人像保护
-  portraitStrength: 50,  // 0-100
+  portrait: false,       // 自动肤色检测（旧），默认关闭
+  portraitStrength: 50,  // 肤色保护强度（自动 + 手动共用）
   gainScale: 1,          // 1 | 0.5
   exposureEv: 0,         // 0-3 EV：整体曝光提升（只作用于 HDR，SDR 底图不变）
   exposureOnly: false,   // 开启后忽略其他参数，只做整体曝光
@@ -1039,6 +1098,11 @@ function makeProfile(p, scale) {
     clarityW: p.clarity / 100,
     portraitOn: !!p.portrait,
     portraitW: (p.portraitStrength || 0) / 100,
+    manualSkinOn: !!(p.skinManual && Array.isArray(p.skinSamples) && p.skinSamples.length),
+    manualSkinW: (p.portraitStrength || 0) / 100,
+    manualSkinLut: (p.skinManual && Array.isArray(p.skinSamples) && p.skinSamples.length)
+      ? buildManualSkinLut(p.skinSamples, p.skinTolerance == null ? 30 : p.skinTolerance)
+      : null,
     radDetail: Math.max(2, Math.round(p.detailRadius * scale)),
     radClarity: Math.max(3, Math.round(clarityRadiusFull * scale)),
     exposureMode,
@@ -1047,6 +1111,36 @@ function makeProfile(p, scale) {
     F,
     K,
   };
+}
+
+/** RGB → Cb/Cr（与内置肤色检测一致的整数近似） */
+function rgbToCbCr(r, g, b) {
+  const cb = -0.1687 * r - 0.3313 * g + 0.5 * b + 128;
+  const cr = 0.5 * r - 0.4187 * g - 0.0813 * b + 128;
+  return [clamp(cb, 0, 255), clamp(cr, 0, 255)];
+}
+
+/** 由取色器样品建立 Cb/Cr 颜色相似度 LUT（256×256，0..1） */
+function buildManualSkinLut(samples, tolerance) {
+  const lut = new Float32Array(256 * 256);
+  if (!samples || !samples.length) return lut;
+  const radius = 8 + clamp(tolerance / 100, 0, 1) * 45;
+  const inner = radius * 0.55;
+  for (let cb = 0; cb < 256; cb++) {
+    for (let cr = 0; cr < 256; cr++) {
+      let m = 0;
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const d = Math.hypot(cb - s.cb, cr - s.cr);
+        if (d < radius) {
+          const v = 1 - smoothstep(inner, radius, d);
+          if (v > m) m = v;
+        }
+      }
+      lut[(cb << 8) | cr] = m;
+    }
+  }
+  return lut;
 }
 
 /** 肤色检测（YCbCr 范围 + 软边界），返回 0..1 */
@@ -1071,6 +1165,12 @@ function gainForPixel(profile, luma, maxc, detailRaw, clarityRaw, r, g, b) {
   if (profile.portraitOn && profile.portraitW > 0) {
     const sm = skinMask(r, g, b, luma);
     if (sm > 0) gv *= 1 - profile.portraitW * sm;
+  }
+  if (profile.manualSkinOn && profile.manualSkinW > 0) {
+    const cb = clampInt(Math.round(-0.1687 * r - 0.3313 * g + 0.5 * b + 128), 0, 255);
+    const cr = clampInt(Math.round(0.5 * r - 0.4187 * g - 0.0813 * b + 128), 0, 255);
+    const mm = profile.manualSkinLut[(cb << 8) | cr];
+    if (mm > 0) gv *= 1 - profile.manualSkinW * mm;
   }
   return gv;
 }
@@ -1556,6 +1656,11 @@ const state = {
   pressSdrTimer: 0,
   pressSdrActive: false,
   pressSdrUsed: false,
+  skinManual: false,
+  skinSamples: [],
+  skinTolerance: 30,
+  skinShowMask: false,
+  skinPickMode: false,
   view: "side",
   split: 0.5,
   splitDrag: false,
@@ -1588,6 +1693,16 @@ const els = {
   cvSideHdr: document.getElementById("cvSideHdr"),
   sideHdrImg: document.getElementById("sideHdrImg"),
   sideHdrCaption: document.getElementById("sideHdrCaption"),
+  skinMaskFrame: document.getElementById("skinMaskFrame"),
+  skinMaskSideL: document.getElementById("skinMaskSideL"),
+  skinMaskSideR: document.getElementById("skinMaskSideR"),
+  skinManual: document.getElementById("skinManual"),
+  skinPickBtn: document.getElementById("skinPickBtn"),
+  skinClearBtn: document.getElementById("skinClearBtn"),
+  skinShowMask: document.getElementById("skinShowMask"),
+  skinSwatches: document.getElementById("skinSwatches"),
+  skinTolerance: document.getElementById("skinTolerance"),
+  skinToleranceVal: document.getElementById("skinToleranceVal"),
   splitHdrWrap: document.getElementById("splitHdrWrap"),
   splitHdrImg: document.getElementById("splitHdrImg"),
   splitBar: document.getElementById("splitBar"),
@@ -1748,6 +1863,7 @@ function drawViewer() {
   els.viewStage.classList.toggle("hidden", side);
   if (side) {
     drawSideView();
+    drawSkinMaskOverlays();
     return;
   }
 
@@ -1804,6 +1920,7 @@ function drawViewer() {
   }
   fitViewFrame();
   syncSplitNativeSize();
+  drawSkinMaskOverlays();
 }
 
 /** 左右对比：两张独立画面，左 SDR、右 HDR（原生或模拟） */
@@ -1901,6 +2018,7 @@ function updateViewHint() {
   } else {
     txt = "HDR 效果 · " + status + "；最终效果以成品预览 / 导出文件为准";
   }
+  if (state.skinPickMode) txt = "取色模式：点击画面吸取肤色（最多 5 个，Esc 退出） · " + txt;
   els.viewHint.textContent = txt;
 }
 
@@ -1982,6 +2100,9 @@ function readParams() {
     clarity: parseFloat(els.clarity.value),
     portrait: els.portrait.checked,
     portraitStrength: parseFloat(els.portraitStrength.value),
+    skinManual: !!state.skinManual,
+    skinSamples: state.skinSamples.slice(),
+    skinTolerance: state.skinTolerance,
     gainScale: parseFloat(els.gainScale.value) || 1,
     exposureEv: parseFloat(els.exposureEv.value) || 0,
     exposureOnly: !!els.exposureOnly.checked,
@@ -2018,6 +2139,7 @@ function updateParamLabels() {
   els.exposureVal.textContent = ev > 0.001
     ? `+${ev.toFixed(1)} EV（仅 HDR）`
     : "0（不改变底图）";
+  updateSkinUi();
   updateViewHint();
   applyExposureOnlyUi();
   updateMobileChips();
@@ -2641,6 +2763,8 @@ async function loadFileCore(file) {
     : ((info && info.orientation) ? info.orientation : 1);
   state.sdrBaseKey = null;
   hidePressSdr();
+  // 新图重置手动肤色保护（默认关闭、清空取样），避免把上一张图的肤色带过来
+  resetSkinForNewImage();
 
   els.editor.classList.remove("hidden");
   els.result.classList.add("hidden");
@@ -3544,6 +3668,207 @@ function hidePressSdr() {
 }
 
 /* ============================================================
+ * 手动肤色保护：取色器 / 取样点 / 容差 / 保护范围蒙版
+ * ============================================================ */
+function setSkinPickMode(on) {
+  state.skinPickMode = !!on;
+  if (els.viewFrame) els.viewFrame.classList.toggle("picking", state.skinPickMode);
+  if (els.sideView) els.sideView.classList.toggle("picking", state.skinPickMode);
+  updateSkinUi();
+  updateViewHint();
+  if (state.skinPickMode) {
+    setStatus("取色模式：点击画面吸取肤色，最多 5 个；再次点「结束取色」退出");
+  } else {
+    setStatus("已退出取色模式");
+  }
+}
+
+function updateSkinUi() {
+  if (!els.skinManual) return;
+  const has = state.skinSamples.length > 0;
+  els.skinManual.checked = state.skinManual;
+  els.skinShowMask.checked = state.skinShowMask;
+  els.skinShowMask.disabled = !has;
+  els.skinTolerance.value = String(state.skinTolerance);
+  els.skinToleranceVal.textContent = String(state.skinTolerance);
+  if (els.skinPickBtn) {
+    els.skinPickBtn.textContent = state.skinPickMode ? "结束取色" : "吸取肤色";
+    els.skinPickBtn.classList.toggle("pick-active", state.skinPickMode);
+  }
+  if (els.skinClearBtn) els.skinClearBtn.disabled = !has;
+  if (!els.skinSwatches) return;
+  els.skinSwatches.innerHTML = "";
+  if (!has) {
+    const span = document.createElement("span");
+    span.className = "skin-empty";
+    span.textContent = "还没有取样";
+    els.skinSwatches.appendChild(span);
+    return;
+  }
+  state.skinSamples.forEach((sample, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "skin-swatch";
+    b.style.background = `rgb(${sample.r},${sample.g},${sample.b})`;
+    b.title = `取样 ${i + 1}：rgb(${sample.r}, ${sample.g}, ${sample.b})；点击删除`;
+    const x = document.createElement("span");
+    x.textContent = "×";
+    b.appendChild(x);
+    b.addEventListener("click", () => {
+      state.skinSamples.splice(i, 1);
+      if (!state.skinSamples.length) {
+        state.skinManual = false;
+        state.skinShowMask = false;
+      }
+      updateSkinUi();
+      schedulePreview();
+      drawSkinMaskOverlays();
+    });
+    els.skinSwatches.appendChild(b);
+  });
+}
+
+function sampleSkinFromClient(clientX, clientY, target) {
+  if (!els.cvSdr.width) return false;
+  let rect = null;
+  if (state.view === "side") {
+    const media = target && target.closest ? target.closest(".side-media") : null;
+    if (!media) return false;
+    const visible = [...media.querySelectorAll("canvas, img")].find((el) => !el.classList.contains("hidden") && el !== els.skinMaskSideL && el !== els.skinMaskSideR);
+    if (!visible) return false;
+    rect = visible.getBoundingClientRect();
+  } else {
+    rect = els.viewFrame.getBoundingClientRect();
+  }
+  if (!rect || clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return false;
+  const nx = (clientX - rect.left) / rect.width;
+  const ny = (clientY - rect.top) / rect.height;
+  const w = els.cvSdr.width, h = els.cvSdr.height;
+  const x = clampInt(Math.round(nx * w), 0, w - 1);
+  const y = clampInt(Math.round(ny * h), 0, h - 1);
+  const ctx = els.cvSdr.getContext("2d", { willReadFrequently: true });
+  const half = 2;
+  const rx = Math.max(0, x - half), ry = Math.max(0, y - half);
+  const rw = Math.min(5, w - rx), rh = Math.min(5, h - ry);
+  const data = ctx.getImageData(rx, ry, rw, rh).data;
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
+  r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
+  const [cb, cr] = rgbToCbCr(r, g, b);
+  if (state.skinSamples.length >= 5) {
+    setStatus("最多 5 个取样点；请先删除一个再取色");
+    return false;
+  }
+  state.skinSamples.push({ r, g, b, cb, cr, nx, ny });
+  state.skinManual = true;
+  updateSkinUi();
+  schedulePreview();
+  drawSkinMaskOverlays();
+  setStatus(`已取样 ${state.skinSamples.length}/5：rgb(${r}, ${g}, ${b})`);
+  return true;
+}
+
+function clearSkinSamples(keepPick) {
+  state.skinSamples = [];
+  state.skinManual = false;
+  state.skinShowMask = false;
+  if (!keepPick) state.skinPickMode = false;
+  if (els.viewFrame) els.viewFrame.classList.remove("picking");
+  if (els.sideView) els.sideView.classList.remove("picking");
+  updateSkinUi();
+  updateViewHint();
+  drawSkinMaskOverlays();
+}
+
+function resetSkinForNewImage() {
+  clearSkinSamples(false);
+  if (els.portrait) els.portrait.checked = false;
+  state.skinTolerance = 30;
+  updateSkinUi();
+}
+
+function buildSkinMaskPreview() {
+  const src = els.cvSdr;
+  if (!src.width || !state.skinSamples.length) return null;
+  const w = src.width, h = src.height;
+  const sctx = src.getContext("2d", { willReadFrequently: true });
+  const data = sctx.getImageData(0, 0, w, h).data;
+  const lut = buildManualSkinLut(state.skinSamples, state.skinTolerance);
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(w, h);
+  const o = img.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const cb = clampInt(Math.round(-0.1687 * data[i] - 0.3313 * data[i + 1] + 0.5 * data[i + 2] + 128), 0, 255);
+    const cr = clampInt(Math.round(0.5 * data[i] - 0.4187 * data[i + 1] - 0.0813 * data[i + 2] + 128), 0, 255);
+    const m = lut[(cb << 8) | cr];
+    o[i] = 40; o[i + 1] = 255; o[i + 2] = 140;
+    o[i + 3] = Math.round(m * 135);
+  }
+  ctx.putImageData(img, 0, 0);
+  // 取样点标记
+  const markerR = Math.max(4, Math.min(12, Math.round(Math.min(w, h) * 0.008)));
+  const markerFont = Math.max(8, Math.min(14, Math.round(markerR * 1.35)));
+  state.skinSamples.forEach((s, idx) => {
+    const x = s.nx * w, y = s.ny * h;
+    ctx.beginPath();
+    ctx.arc(x, y, markerR, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = `bold ${markerFont}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(idx + 1), x, y + 1);
+  });
+  return c;
+}
+
+function drawSkinMaskOverlays() {
+  if (!els.skinMaskFrame) return;
+  const on = state.skinShowMask && state.skinManual && state.skinSamples.length > 0;
+  const all = [els.skinMaskFrame, els.skinMaskSideL, els.skinMaskSideR].filter(Boolean);
+  if (!on) { all.forEach((c) => c.classList.add("hidden")); return; }
+  const mask = buildSkinMaskPreview();
+  if (!mask) { all.forEach((c) => c.classList.add("hidden")); return; }
+  const side = state.view === "side";
+  if (side) {
+    els.skinMaskFrame.classList.add("hidden");
+    const panes = [
+      [els.skinMaskSideL, document.getElementById("cvSideSdr")],
+      [els.skinMaskSideR, (els.sideHdrImg && !els.sideHdrImg.classList.contains("hidden")) ? els.sideHdrImg : els.cvSideHdr],
+    ];
+    panes.forEach(([overlay, imageEl]) => {
+      if (!overlay || !imageEl) return;
+      overlay.width = mask.width; overlay.height = mask.height;
+      overlay.getContext("2d").drawImage(mask, 0, 0);
+      overlay.classList.remove("hidden");
+      const media = overlay.parentElement;
+      const mr = media.getBoundingClientRect();
+      const ir = imageEl.getBoundingClientRect();
+      overlay.style.left = (ir.left - mr.left) + "px";
+      overlay.style.top = (ir.top - mr.top) + "px";
+      overlay.style.right = "auto";
+      overlay.style.bottom = "auto";
+      overlay.style.width = ir.width + "px";
+      overlay.style.height = ir.height + "px";
+    });
+  } else {
+    els.skinMaskSideL && els.skinMaskSideL.classList.add("hidden");
+    els.skinMaskSideR && els.skinMaskSideR.classList.add("hidden");
+    els.skinMaskFrame.width = mask.width;
+    els.skinMaskFrame.height = mask.height;
+    els.skinMaskFrame.getContext("2d").drawImage(mask, 0, 0);
+    els.skinMaskFrame.classList.remove("hidden");
+  }
+}
+
+
+/* ============================================================
  * 手机端参数条
  * ============================================================ */
 const MOBILE_PARAM_DEFS = [
@@ -3797,8 +4122,35 @@ function bindUi() {
     renderPreview();
     if (state.hdrHigh && !isDiagnosticMode()) scheduleNativeHdrPreview(0);
   });
+
+  // 手动肤色保护 / 取色器
+  if (els.skinPickBtn) els.skinPickBtn.addEventListener("click", () => setSkinPickMode(!state.skinPickMode));
+  if (els.skinClearBtn) els.skinClearBtn.addEventListener("click", () => {
+    clearSkinSamples(false);
+    if (state.bitmap) { schedulePreview(); drawSkinMaskOverlays(); }
+  });
+  if (els.skinManual) els.skinManual.addEventListener("change", () => {
+    state.skinManual = els.skinManual.checked;
+    if (state.skinManual && !state.skinSamples.length) setStatus("先点「吸取肤色」在画面上取样");
+    if (!state.skinManual) state.skinShowMask = false;
+    updateSkinUi();
+    drawSkinMaskOverlays();
+    if (state.bitmap) schedulePreview();
+  });
+  if (els.skinShowMask) els.skinShowMask.addEventListener("change", () => {
+    state.skinShowMask = els.skinShowMask.checked;
+    drawSkinMaskOverlays();
+  });
+  if (els.skinTolerance) els.skinTolerance.addEventListener("input", () => {
+    state.skinTolerance = parseInt(els.skinTolerance.value, 10) || 0;
+    updateSkinUi();
+    drawSkinMaskOverlays();
+    if (state.bitmap) schedulePreview();
+  });
   els.resetParams.addEventListener("click", () => {
     applyParamsToInputs(DEFAULT_PARAMS);
+    clearSkinSamples(false);
+    state.skinTolerance = 30;
     updateParamLabels();
     schedulePreview();
   });
@@ -3819,7 +4171,7 @@ function bindUi() {
   };
   frame.addEventListener("contextmenu", (e) => { if (e.pointerType !== "mouse") e.preventDefault(); });
   frame.addEventListener("pointerdown", (e) => {
-    if (!state.bitmap) return;
+    if (!state.bitmap || state.skinPickMode) return;
     if (state.view === "split") {
       e.preventDefault();
       state.splitDrag = true;
@@ -3861,17 +4213,18 @@ function bindUi() {
   frame.addEventListener("pointerup", endFramePointer);
   frame.addEventListener("pointercancel", endFramePointer);
   frame.addEventListener("pointerleave", (e) => { if (!state.splitDrag && !state.pressSdrActive) clearTimeout(state.pressSdrTimer); });
-  frame.addEventListener("click", () => {
+  frame.addEventListener("click", (e) => {
     if (!state.bitmap) return;
+    if (state.skinPickMode) { e.preventDefault(); sampleSkinFromClient(e.clientX, e.clientY, e.target); return; }
     if (state.view === "split") { state.suppressFrameClick = false; return; }
     if (state.pressSdrUsed) { state.pressSdrUsed = false; state.suppressFrameClick = false; return; }
     if (state.suppressFrameClick) { state.suppressFrameClick = false; return; }
     openBigView();
   });
   if (typeof ResizeObserver !== "undefined" && els.viewStage) {
-    new ResizeObserver(() => fitViewFrame()).observe(els.viewStage);
+    new ResizeObserver(() => { fitViewFrame(); drawSkinMaskOverlays(); }).observe(els.viewStage);
   }
-  window.addEventListener("resize", () => fitViewFrame());
+  window.addEventListener("resize", () => { fitViewFrame(); drawSkinMaskOverlays(); });
   if (window.matchMedia) {
     const mqMobile = window.matchMedia("(max-width: 960px)");
     const onMobileChange = () => {
@@ -3881,12 +4234,19 @@ function bindUi() {
     };
     if (mqMobile.addEventListener) mqMobile.addEventListener("change", onMobileChange);
   }
-  if (els.sideView) els.sideView.addEventListener("click", () => { if (state.bitmap) openBigView(); });
+  if (els.sideView) els.sideView.addEventListener("click", (e) => {
+    if (!state.bitmap) return;
+    if (state.skinPickMode) { sampleSkinFromClient(e.clientX, e.clientY, e.target); return; }
+    openBigView();
+  });
   if (els.bigClose) els.bigClose.addEventListener("click", closeBigView);
   if (els.bigFit) els.bigFit.addEventListener("click", () => els.bigStage.classList.remove("actual"));
   if (els.bigActual) els.bigActual.addEventListener("click", () => els.bigStage.classList.add("actual"));
   document.addEventListener("keydown", (e) => {
-    if (state.bigPreviewOpen && e.key === "Escape") closeBigView();
+    if (e.key === "Escape") {
+      if (state.bigPreviewOpen) closeBigView();
+      else if (state.skinPickMode) setSkinPickMode(false);
+    }
   });
 
   // 底部导航 + 独立导出界面
@@ -3947,7 +4307,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.22",
+  version: "0.23",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
