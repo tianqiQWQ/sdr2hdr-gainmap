@@ -33,7 +33,7 @@ const SHOTS = path.join(ROOT, "tests");
     drop: getComputedStyle(document.getElementById("drop")).display,
   }));
   console.log("mobile default:", JSON.stringify(mobileDefault));
-  if (mobileDefault.view !== "hdr") errors.push("mobile should keep HDR as default view");
+  if (mobileDefault.view !== "split") errors.push("mobile should default to split view");
   if (mobileDefault.headerBtn !== "none") errors.push("header open button should stay hidden on mobile");
   if (mobileDefault.drop !== "none") errors.push("mobile drop bar should be hidden after load");
 
