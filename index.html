@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SDR → HDR 转换器（本地网页版）v0.20</title>
+<title>SDR → HDR 转换器（本地网页版）v0.21</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -258,6 +258,8 @@
     .view-toolbar { padding: 4px 6px; gap: 6px; }
     .view-seg button { padding: 6px 10px; font-size: 12px; }
     .view-hint { display: none; }
+    .view-seg button[data-view="side"] { display: none; }
+    .side-view { display: none !important; }
     .stage { padding: 4px; }
     .press-hint { display: block; }
     .previews {
@@ -342,6 +344,37 @@
   .splitbar i::before { left: 2px; border-right-color: #1a1d24; }
   .splitbar i::after { right: 2px; border-left-color: #1a1d24; }
   .frame.split-mode .press-hint { display: none !important; }
+  /* 拉手对比：原生 HDR 图层（右半） */
+  .split-hdr-wrap {
+    position: absolute; top: 0; right: 0; bottom: 0; z-index: 3;
+    overflow: hidden; pointer-events: none;
+  }
+  .split-hdr-wrap img {
+    position: absolute; top: 0; right: 0; display: block;
+    width: 100%; height: 100%;
+  }
+  /* 左右对比：两张图并排 */
+  .side-view {
+    flex: 1 1 auto; min-height: 0; display: flex; gap: 12px; padding: 10px;
+    overflow: hidden;
+  }
+  .side-pane {
+    flex: 1 1 0; min-width: 0; min-height: 0; margin: 0;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .side-media {
+    flex: 1 1 auto; min-height: 0; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background: #080a0e; border: 1px solid var(--line); border-radius: 8px;
+    overflow: hidden;
+  }
+  .side-media canvas, .side-media img {
+    display: block; width: auto; height: auto;
+    max-width: 100%; max-height: 100%; object-fit: contain; background: #000;
+  }
+  .side-pane figcaption {
+    flex: none; padding: 6px 2px 0; font-size: 12px; color: var(--muted); text-align: center;
+  }
   .view-tag {
     position: absolute; bottom: 8px; z-index: 7; color: #fff; font-size: 11px;
     background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 4px; letter-spacing: .04em;
@@ -414,8 +447,8 @@
 <body>
 <header>
   <div class="header-text">
-    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.20 · 本地处理，不上传</span></h1>
-    <div class="ver-note">v0.20 更新：修复导入后未默认进入对比的问题；对比按钮始终可用</div>
+    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.21 · 本地处理，不上传</span></h1>
+    <div class="ver-note">v0.21 更新：新增四种视图（SDR / HDR / 左右对比 / 拉手对比）；支持 HDR 的设备自动使用原生 HDR 渲染</div>
     <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
        <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
   </div>
@@ -436,20 +469,35 @@
         <div class="view-seg" id="viewTabs" role="group" aria-label="视图">
           <button type="button" data-view="sdr" aria-pressed="false">SDR 原图</button>
           <button type="button" data-view="hdr" aria-pressed="false">HDR 效果</button>
-          <button type="button" data-view="split" aria-pressed="true">对比</button>
+          <button type="button" data-view="side" aria-pressed="true">左右对比</button>
+          <button type="button" data-view="split" aria-pressed="false">拉手对比</button>
         </div>
         <span class="view-hint" id="viewHint">拖动白色分割线，对比 SDR / HDR（左 SDR · 右 HDR）</span>
       </div>
       <div class="stage" id="viewStage">
         <div class="frame" id="viewFrame">
           <canvas id="cvView"></canvas>
-          <img id="hdrImg" class="hidden" alt="真 HDR 预览">
+          <img id="hdrImg" class="hidden" alt="HDR 效果">
           <canvas id="cvPressSdr" class="press-sdr hidden"></canvas>
+          <div class="split-hdr-wrap hidden" id="splitHdrWrap"><img id="splitHdrImg" alt="HDR 效果"></div>
           <div class="splitbar hidden" id="splitBar"><i></i></div>
           <span class="view-tag hidden" id="tagL">SDR</span>
           <span class="view-tag hidden" id="tagR">HDR</span>
           <div class="press-hint">按住画面看 SDR · 点按看成品预览</div>
         </div>
+      </div>
+      <div class="side-view hidden" id="sideView">
+        <figure class="side-pane">
+          <div class="side-media"><canvas id="cvSideSdr"></canvas></div>
+          <figcaption>SDR 原图</figcaption>
+        </figure>
+        <figure class="side-pane">
+          <div class="side-media">
+            <canvas id="cvSideHdr"></canvas>
+            <img id="sideHdrImg" class="hidden" alt="HDR 效果">
+          </div>
+          <figcaption id="sideHdrCaption">HDR 效果</figcaption>
+        </figure>
       </div>
       <canvas id="cvSdr" class="offscreen"></canvas>
       <canvas id="cvHdr" class="offscreen"></canvas>
@@ -465,19 +513,18 @@
       <div class="side-title" style="margin-top:14px">参数</div>
       <div class="controls">
       <div class="ctl-row view-options">
-        <label class="sel">HDR 显示
+        <label class="sel">辅助显示
           <select id="previewMode">
-            <option value="gain" selected>标准模拟（不压暗）</option>
-            <option value="headroom">亮度余量（压暗）</option>
-            <option value="heatmap">增益热力图</option>
-            <option value="gainmap">增益图（灰度）</option>
-            <option value="truehdr">真 HDR（原生渲染）</option>
+            <option value="gain" selected>正常 HDR（自动）</option>
+            <option value="headroom">亮度余量（诊断）</option>
+            <option value="heatmap">增益热力图（诊断）</option>
+            <option value="gainmap">增益图灰度（诊断）</option>
           </select>
         </label>
         <label class="chk"><input type="checkbox" id="showAssist" checked> 显示直方图</label>
       </div>
       <div class="hdr-link hidden" id="hdrLinkWrap">
-        <a id="hdrLink" href="#" target="_blank" rel="noopener">在新标签打开真 HDR 预览（原生渲染）</a>
+        <a id="hdrLink" href="#" target="_blank" rel="noopener">在新标签打开原生 HDR 预览</a>
       </div>
 
       <div class="ctl-grid">
@@ -1313,7 +1360,6 @@ function renderPreview() {
   state.previewStats = stats;
   updateViewHint();
   drawViewer();
-  if (mode === "truehdr") scheduleTrueHdrPreview();
   return stats;
 }
 
@@ -1486,6 +1532,7 @@ const state = {
   hdrPreviewTimer: 0,
   hdrPreviewSeq: 0,
   hdrPreviewUrl: null,
+  hdrPreviewPending: false,
   hdrHigh: false,
   hdrStandard: false,
   bigPreviewOpen: false,
@@ -1507,7 +1554,7 @@ const state = {
   pressSdrTimer: 0,
   pressSdrActive: false,
   pressSdrUsed: false,
-  view: "split",
+  view: "side",
   split: 0.5,
   splitDrag: false,
   framePress: null,
@@ -1534,6 +1581,13 @@ const els = {
   viewHint: document.getElementById("viewHint"),
   viewStage: document.getElementById("viewStage"),
   viewFrame: document.getElementById("viewFrame"),
+  sideView: document.getElementById("sideView"),
+  cvSideSdr: document.getElementById("cvSideSdr"),
+  cvSideHdr: document.getElementById("cvSideHdr"),
+  sideHdrImg: document.getElementById("sideHdrImg"),
+  sideHdrCaption: document.getElementById("sideHdrCaption"),
+  splitHdrWrap: document.getElementById("splitHdrWrap"),
+  splitHdrImg: document.getElementById("splitHdrImg"),
   splitBar: document.getElementById("splitBar"),
   tagL: document.getElementById("tagL"),
   tagR: document.getElementById("tagR"),
@@ -1644,7 +1698,10 @@ function setStatus(msg, isWarn) {
       state.hdrHigh = mqHigh.matches;
       state.hdrStandard = mqStd.matches;
       if (state.bitmap) {
+        if (state.hdrHigh && !isDiagnosticMode()) scheduleNativeHdrPreview(0);
         updateViewHint();
+        updateViewTabs();
+        drawViewer();
         updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
       }
     };
@@ -1664,51 +1721,131 @@ function hdrSupportText() {
   return "未知（浏览器不支持 dynamic-range 检测）";
 }
 
-/** 根据当前 view / split 把隐藏的 SDR / HDR 画布合成到显示画布 */
+function isMobileUi() {
+  return !!(window.matchMedia && window.matchMedia("(max-width: 960px)").matches);
+}
+function isDiagnosticMode() {
+  return ["headroom", "heatmap", "gainmap"].includes(els.previewMode.value);
+}
+function diagnosticName() {
+  const n = { headroom: "亮度余量", heatmap: "增益热力图", gainmap: "增益图灰度" };
+  return n[els.previewMode.value] || "诊断";
+}
+function imageReady(img) {
+  return !!(img && img.complete && img.naturalWidth > 0);
+}
+function nativeSimAvailable() {
+  return !!(state.hdrHigh && state.hdrPreviewUrl && !isDiagnosticMode());
+}
+
+/** 根据当前 view 把 SDR / HDR 画面合成到显示区域；真 HDR 用原生图片，模拟/诊断用画布 */
 function drawViewer() {
+  if (!els.cvView || !state.bitmap) return;
+  const side = state.view === "side";
+  els.sideView.classList.toggle("hidden", !side);
+  els.viewStage.classList.toggle("hidden", side);
+  if (side) {
+    drawSideView();
+    return;
+  }
+
   const vc = els.cvView;
-  if (!vc || !state.bitmap) return;
   const srcW = els.cvHdr.width || els.cvSdr.width;
   const srcH = els.cvHdr.height || els.cvSdr.height;
   if (!srcW || !srcH) return;
   vc.width = srcW; vc.height = srcH;
   const ctx = vc.getContext("2d");
-  const mode = els.previewMode.value;
-  const isTrue = state.view === "hdr" && mode === "truehdr";
-  els.hdrImg.classList.toggle("hidden", !isTrue);
-  vc.classList.toggle("hidden", isTrue);
+
   const splitOn = state.view === "split";
   els.viewFrame.classList.toggle("split-mode", splitOn);
   els.splitBar.classList.toggle("hidden", !splitOn);
   els.tagL.classList.toggle("hidden", !splitOn);
   els.tagR.classList.toggle("hidden", !splitOn);
-  if (isTrue) {
-    if (els.hdrImg.src) {
-      els.hdrImg.style.display = "block";
-      els.hdrImg.style.width = "100%";
-      els.hdrImg.style.height = "100%";
-    }
-    fitViewFrame();
-    return;
-  }
-  ctx.clearRect(0, 0, srcW, srcH);
+  els.hdrImg.classList.add("hidden");
+  els.splitHdrWrap.classList.add("hidden");
+  els.cvView.classList.remove("hidden");
+
+  const native = nativeSimAvailable();
+  const nativeReady = native && imageReady(els.hdrImg);
+  const splitNativeReady = native && imageReady(els.splitHdrImg);
+
   if (state.view === "sdr") {
+    ctx.clearRect(0, 0, srcW, srcH);
     ctx.drawImage(els.cvSdr, 0, 0);
   } else if (state.view === "hdr") {
-    ctx.drawImage(els.cvHdr, 0, 0);
-  } else {
-    // 左 SDR / 右 HDR
-    ctx.drawImage(els.cvHdr, 0, 0);
-    const sx = Math.round(state.split * srcW);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, sx, srcH);
-    ctx.clip();
-    ctx.drawImage(els.cvSdr, 0, 0);
-    ctx.restore();
+    if (nativeReady) {
+      els.hdrImg.classList.remove("hidden");
+      els.cvView.classList.add("hidden");
+    } else {
+      ctx.clearRect(0, 0, srcW, srcH);
+      ctx.drawImage(els.cvHdr, 0, 0);
+    }
+  } else if (state.view === "split") {
     els.splitBar.style.left = (state.split * 100) + "%";
+    if (splitNativeReady) {
+      // 左半用 SDR 画布，右半叠加真正的原生 HDR 图片
+      ctx.clearRect(0, 0, srcW, srcH);
+      ctx.drawImage(els.cvSdr, 0, 0);
+      els.splitHdrWrap.classList.remove("hidden");
+    } else {
+      // 不支持 HDR / 诊断模式 / 原生图尚未加载：使用模拟画面分割
+      ctx.clearRect(0, 0, srcW, srcH);
+      ctx.drawImage(els.cvHdr, 0, 0);
+      const sx = Math.round(state.split * srcW);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, sx, srcH);
+      ctx.clip();
+      ctx.drawImage(els.cvSdr, 0, 0);
+      ctx.restore();
+    }
   }
   fitViewFrame();
+  syncSplitNativeSize();
+}
+
+/** 左右对比：两张独立画面，左 SDR、右 HDR（原生或模拟） */
+function drawSideView() {
+  if (!els.cvSideSdr || !els.cvSdr.width) return;
+  const w = els.cvSdr.width, h = els.cvSdr.height;
+  els.cvSideSdr.width = w; els.cvSideSdr.height = h;
+  els.cvSideSdr.getContext("2d").drawImage(els.cvSdr, 0, 0);
+  els.cvSideHdr.width = w; els.cvSideHdr.height = h;
+  els.cvSideHdr.getContext("2d").drawImage(els.cvHdr, 0, 0);
+
+  if (state.hdrPreviewUrl && els.sideHdrImg.src !== state.hdrPreviewUrl) {
+    els.sideHdrImg.src = state.hdrPreviewUrl;
+  }
+  const diag = isDiagnosticMode();
+  const native = state.hdrHigh && state.hdrPreviewUrl && !diag;
+  const ready = native && imageReady(els.sideHdrImg);
+  els.sideHdrImg.classList.toggle("hidden", !ready);
+  els.cvSideHdr.classList.toggle("hidden", ready);
+
+  if (els.sideHdrCaption) {
+    if (diag) {
+      els.sideHdrCaption.textContent = "诊断视图（非真 HDR）· " + diagnosticName();
+    } else if (ready) {
+      els.sideHdrCaption.textContent = "HDR 效果（原生 HDR）";
+    } else if (state.hdrHigh && state.hdrPreviewPending) {
+      els.sideHdrCaption.textContent = "HDR 效果（原生渲染中，暂显模拟）";
+    } else if (state.hdrHigh) {
+      els.sideHdrCaption.textContent = "HDR 效果（原生 HDR 加载中，暂显模拟）";
+    } else {
+      els.sideHdrCaption.textContent = "HDR 效果（SDR 模拟）";
+    }
+  }
+}
+
+/** 原生 HDR 图片是整图尺寸，分割线只改变右半容器的宽度 */
+function syncSplitNativeSize() {
+  const wrap = els.splitHdrWrap, img = els.splitHdrImg, frame = els.viewFrame;
+  if (!wrap || !img || !frame) return;
+  if (wrap.classList.contains("hidden")) return;
+  const r = frame.getBoundingClientRect();
+  img.style.width = Math.max(1, Math.round(r.width)) + "px";
+  img.style.height = Math.max(1, Math.round(r.height)) + "px";
+  wrap.style.width = ((1 - state.split) * 100) + "%";
 }
 
 /** 把 frame 缩放到 stage 内（保持照片比例，最大化显示） */
@@ -1725,52 +1862,49 @@ function fitViewFrame() {
   const k = Math.min(availW / w, availH / h);
   frame.style.width = Math.max(1, Math.floor(w * k)) + "px";
   frame.style.height = Math.max(1, Math.floor(h * k)) + "px";
+  syncSplitNativeSize();
 }
 
 function updateViewTabs() {
   if (!els.viewTabs) return;
-  const modeTrue = els.previewMode.value === "truehdr";
   els.viewTabs.querySelectorAll("button").forEach((b) => {
-    const v = b.dataset.view;
-    b.setAttribute("aria-pressed", String(v === state.view));
+    b.setAttribute("aria-pressed", String(b.dataset.view === state.view));
     b.disabled = false;
   });
 }
 
+function nativeStatusText() {
+  if (isDiagnosticMode()) return "诊断视图（非真 HDR）· " + diagnosticName();
+  if (state.hdrHigh) {
+    if (state.hdrPreviewPending) return "原生 HDR（渲染中，暂显模拟）";
+    if (state.hdrPreviewUrl) return "原生 HDR";
+    return "原生 HDR（尚未生成）";
+  }
+  return "SDR 模拟（本机未检测到 HDR 显示）";
+}
+
 function updateViewHint() {
   if (!els.viewHint) return;
-  const mode = els.previewMode.value;
-  const p = readParams();
-  const M = 3.0 * (p.strength / 100);
-  const E = Math.max(0, p.exposureEv || 0);
-  const peak = Math.pow(2, Math.max(0.001, p.exposureOnly && E > 0.001 ? E : E + M));
+  const diag = isDiagnosticMode();
+  const status = nativeStatusText();
   let txt = "";
   if (state.view === "sdr") {
     txt = "SDR 原图 —— 普通屏 / 旧软件 / 不支持 gain map 的地方看到的就是它";
+  } else if (state.view === "side") {
+    txt = "左右对比：左侧 SDR 原图 / 右侧 HDR 效果 · " + status;
   } else if (state.view === "split") {
-    txt = "拖动白色分割线对比 SDR / HDR（左 SDR · 右 HDR；HDR 侧为 SDR 模拟画面）";
-  } else if (mode === "truehdr") {
-    txt = `真 HDR 预览 —— 浏览器原生渲染 gain map（本机 HDR：${hdrSupportText()}）；最终效果请看成品预览或导出文件`;
-  } else if (mode === "gainmap") {
-    txt = "增益图灰度 —— 越白 = HDR 屏上提亮越多，黑色 = 不变（不是真实画面）";
-  } else if (mode === "heatmap") {
-    txt = "增益热力图 —— 颜色越亮 = HDR 屏上提亮越多（不是真实画面）";
-  } else if (mode === "headroom") {
-    txt = "亮度余量示意 —— 压暗画面来表现高光余量；导出文件的 SDR 部分不变";
+    txt = "拉手对比：拖动白色分割线 · 左 SDR / 右 HDR · " + status;
+  } else if (diag) {
+    txt = "诊断视图（非真 HDR）：" + diagnosticName() + " —— 用于查看增益分布，不是真实画面";
   } else {
-    txt = `HDR 效果（模拟）—— 发白区域会被提亮，最高约 ${peak.toFixed(1)}×；真实 HDR 请看成品预览`;
+    txt = "HDR 效果 · " + status + "；最终效果以成品预览 / 导出文件为准";
   }
   els.viewHint.textContent = txt;
 }
 
 function setView(v) {
-  if (!["sdr", "hdr", "split"].includes(v)) return;
-  if (v === "split" && els.previewMode.value === "truehdr") {
-    // 真 HDR 是整图原生渲染，不能分割；点击对比时自动切回标准模拟，而不是禁用按钮
-    els.previewMode.value = "gain";
-    setPreviewModeUi();
-    if (state.bitmap) renderPreview();
-  }
+  if (!["sdr", "hdr", "side", "split"].includes(v)) return;
+  if (v === "side" && isMobileUi()) return;
   state.view = v;
   updateViewTabs();
   updateViewHint();
@@ -1778,29 +1912,28 @@ function setView(v) {
 }
 
 function setPreviewModeUi() {
-  const mode = els.previewMode.value;
-  const isTrue = mode === "truehdr";
-  if (els.hdrLinkWrap) els.hdrLinkWrap.classList.toggle("hidden", !isTrue);
-  if (isTrue && state.view === "split") state.view = "hdr";
-  if (isTrue) scheduleTrueHdrPreview();
+  if (els.hdrLinkWrap) {
+    els.hdrLinkWrap.classList.toggle("hidden", !(state.hdrHigh && state.hdrPreviewUrl));
+  }
   updateViewTabs();
   updateViewHint();
   drawViewer();
 }
 
-function scheduleTrueHdrPreview() {
+/** 延迟生成预览分辨率的原生 HDR（Ultra HDR JPG），用于 HDR 效果 / 左右对比右图 / 拉手对比右半 */
+function scheduleNativeHdrPreview(delay) {
+  if (!state.bitmap || !state.hdrHigh) return;
+  state.hdrPreviewPending = true;
+  updateViewHint();
   clearTimeout(state.hdrPreviewTimer);
-  state.hdrPreviewTimer = setTimeout(() => { updateTrueHdrPreview(); }, 300);
+  state.hdrPreviewTimer = setTimeout(() => { updateNativeHdrPreview(); }, delay == null ? 180 : delay);
 }
 
-/**
- * 真 HDR 预览：把"预览尺寸的 SDR 基准图 + 当前参数的增益图"实时封装成 Ultra HDR JPG，
- * 交给浏览器原生渲染（支持时即为真实 HDR；不支持时退化为 SDR）。
- */
-async function updateTrueHdrPreview() {
-  if (!state.bitmap || els.previewMode.value !== "truehdr") return;
-  if (!els.cvSdr.width) return;
+async function updateNativeHdrPreview() {
+  if (!state.bitmap || !state.hdrHigh || !els.cvSdr.width) return;
   const seq = ++state.hdrPreviewSeq;
+  state.hdrPreviewPending = true;
+  updateViewHint();
   try {
     const w = els.cvSdr.width, h = els.cvSdr.height;
     const params = readParams();
@@ -1812,18 +1945,27 @@ async function updateTrueHdrPreview() {
       baseBytes, gainMapJpeg,
       profile.exposureMode ? makeMeta(params.strength, profile.K) : makeMeta(params.strength)
     );
-    if (seq !== state.hdrPreviewSeq) return; // 已有更新的请求，丢弃本次结果
+    if (seq !== state.hdrPreviewSeq) return;
     const url = URL.createObjectURL(new Blob([outBytes], { type: "image/jpeg" }));
     const old = state.hdrPreviewUrl;
     state.hdrPreviewUrl = url;
-    els.hdrImg.src = url;
-    els.hdrLink.href = url;
-    els.hdrImg.onload = () => { if (state.view === "hdr" && els.previewMode.value === "truehdr") drawViewer(); };
-    if (state.view === "hdr" && els.previewMode.value === "truehdr") drawViewer();
+    state.hdrPreviewPending = false;
+    const imgs = [els.hdrImg, els.sideHdrImg, els.splitHdrImg];
+    imgs.forEach((img) => {
+      if (!img) return;
+      img.onload = () => { updateViewHint(); drawViewer(); };
+      img.src = url;
+    });
+    if (els.hdrLink) els.hdrLink.href = url;
+    if (els.hdrLinkWrap) els.hdrLinkWrap.classList.remove("hidden");
+    updateViewHint();
+    drawViewer();
     if (old) setTimeout(() => URL.revokeObjectURL(old), 15000);
   } catch (e) {
-    console.error("真 HDR 预览生成失败:", e);
-    setStatus("真 HDR 预览生成失败：" + e.message, true);
+    state.hdrPreviewPending = false;
+    updateViewHint();
+    console.error("原生 HDR 预览生成失败:", e);
+    setStatus("原生 HDR 预览生成失败：" + e.message, true);
   }
 }
 
@@ -1960,6 +2102,7 @@ function schedulePreview() {
       scheduleBigHdrPreview();
     } else {
       renderPreview();
+      if (state.hdrHigh && !isDiagnosticMode()) scheduleNativeHdrPreview(180);
     }
     updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
   }, 90);
@@ -2524,19 +2667,29 @@ async function loadFileCore(file) {
   updateExportLabels();
   updateExportInfo();
 
-  // 载入新图时重置显示模式，避免上次选过“真 HDR”等模式把默认对比顶掉
+  // 载入新图时重置辅助显示模式，避免上次的诊断/旧模式影响默认视图
   if (els.previewMode && els.previewMode.value !== "gain") {
     els.previewMode.value = "gain";
   }
-  // 载入后统一默认进入左右对比（桌面 / 手机 / 窄窗口一致）
-  state.view = "split";
+  // 预览用的原生 HDR 图属于上一张图，先作废；随后按新图重新生成
+  if (state.hdrPreviewUrl) {
+    const oldUrl = state.hdrPreviewUrl;
+    state.hdrPreviewUrl = null;
+    setTimeout(() => URL.revokeObjectURL(oldUrl), 5000);
+  }
+  state.hdrPreviewPending = false;
+  if (els.hdrLinkWrap) els.hdrLinkWrap.classList.add("hidden");
+  // 桌面默认「左右对比」，手机保持原来的「拉手对比」
+  const defaultView = isMobileUi() ? "split" : "side";
+  state.view = defaultView;
   state.split = 0.5;
   updateParamLabels();
   updateViewTabs();
   applyAssistVisibility();
   renderSdrBase();
   renderPreview();
-  state.view = "split";
+  if (state.hdrHigh) scheduleNativeHdrPreview(0);
+  state.view = defaultView;
   updateViewTabs();
   updateViewHint();
   drawViewer();
@@ -3638,6 +3791,7 @@ function bindUi() {
     setPreviewModeUi();
     if (!state.bitmap) return;
     renderPreview();
+    if (state.hdrHigh && !isDiagnosticMode()) scheduleNativeHdrPreview(0);
   });
   els.resetParams.addEventListener("click", () => {
     applyParamsToInputs(DEFAULT_PARAMS);
@@ -3714,6 +3868,16 @@ function bindUi() {
     new ResizeObserver(() => fitViewFrame()).observe(els.viewStage);
   }
   window.addEventListener("resize", () => fitViewFrame());
+  if (window.matchMedia) {
+    const mqMobile = window.matchMedia("(max-width: 960px)");
+    const onMobileChange = () => {
+      if (mqMobile.matches && state.view === "side") setView("split");
+      updateViewTabs();
+      drawViewer();
+    };
+    if (mqMobile.addEventListener) mqMobile.addEventListener("change", onMobileChange);
+  }
+  if (els.sideView) els.sideView.addEventListener("click", () => { if (state.bitmap) openBigView(); });
   if (els.bigClose) els.bigClose.addEventListener("click", closeBigView);
   if (els.bigFit) els.bigFit.addEventListener("click", () => els.bigStage.classList.remove("actual"));
   if (els.bigActual) els.bigActual.addEventListener("click", () => els.bigStage.classList.add("actual"));
@@ -3779,7 +3943,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.20",
+  version: "0.21",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
@@ -3825,7 +3989,6 @@ window.__hdrApp = {
 
 bindUi();
 bindTooltips();
-if (state.hdrHigh) els.previewMode.value = "truehdr";
 setPreviewModeUi();
 updateParamLabels();
 </script>

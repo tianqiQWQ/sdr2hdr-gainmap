@@ -31,8 +31,11 @@ const SHOTS = path.join(ROOT, "tests");
     view: state.view,
     headerBtn: getComputedStyle(document.getElementById("headerOpenBtn")).display,
     drop: getComputedStyle(document.getElementById("drop")).display,
+    tabs: [...document.querySelectorAll("#viewTabs button")].map((b) => [b.dataset.view, getComputedStyle(b).display]),
   }));
   console.log("mobile default:", JSON.stringify(mobileDefault));
+  if (mobileDefault.tabs.some(([v, d]) => v === "side" && d !== "none")) errors.push("mobile should hide side-by-side tab");
+  if (mobileDefault.tabs.filter(([, d]) => d !== "none").length !== 3) errors.push("mobile should have three view tabs");
   if (mobileDefault.view !== "split") errors.push("mobile should default to split view");
   if (mobileDefault.headerBtn !== "none") errors.push("header open button should stay hidden on mobile");
   if (mobileDefault.drop !== "none") errors.push("mobile drop bar should be hidden after load");

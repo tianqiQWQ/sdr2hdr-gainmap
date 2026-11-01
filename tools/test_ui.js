@@ -39,10 +39,16 @@ const SHOTS = path.join(ROOT, "tests");
     view: state.view,
     headerBtn: getComputedStyle(document.getElementById("headerOpenBtn")).display,
     drop: getComputedStyle(document.getElementById("drop")).display,
-    splitTags: !document.getElementById("tagL").classList.contains("hidden"),
+    sideVisible: !document.getElementById("sideView").classList.contains("hidden"),
+    stageHidden: document.getElementById("viewStage").classList.contains("hidden"),
+    tabs: [...document.querySelectorAll("#viewTabs button")].map((b) => b.dataset.view),
+    captions: [...document.querySelectorAll("#sideView figcaption")].map((x) => x.textContent),
+    hdrHigh: state.hdrHigh,
   }));
   console.log("after load:", JSON.stringify(afterLoad));
-  if (afterLoad.view !== "split" || !afterLoad.splitTags) errors.push("desktop should default to split view");
+  if (afterLoad.view !== "side" || !afterLoad.sideVisible || !afterLoad.stageHidden) errors.push("desktop should default to side-by-side view");
+  if (afterLoad.tabs.length !== 4) errors.push("desktop should have four view tabs");
+  if (!afterLoad.captions[0].includes("SDR") || !afterLoad.captions[1].includes("HDR")) errors.push("side-by-side captions missing");
   if (afterLoad.headerBtn === "none") errors.push("header open button should be visible");
   if (afterLoad.drop !== "none") errors.push("compact drop bar should be hidden after load");
 
@@ -154,10 +160,6 @@ const SHOTS = path.join(ROOT, "tests");
   await page.select("#previewMode", "heatmap");
   await new Promise((r) => setTimeout(r, 500));
   await shot("ui_v10_heatmap.png");
-  await page.select("#previewMode", "truehdr");
-  await page.waitForFunction('document.getElementById("hdrImg").src.indexOf("blob:") === 0 && document.getElementById("hdrImg").naturalWidth > 0', { timeout: 30000 });
-  await new Promise((r) => setTimeout(r, 500));
-  await shot("ui_v10_truehdr.png");
   // 增益图灰度预览
   await page.select("#previewMode", "gainmap");
   await new Promise((r) => setTimeout(r, 700));
@@ -209,23 +211,15 @@ const SHOTS = path.join(ROOT, "tests");
   await new Promise((r) => setTimeout(r, 500));
   if (!(await page.evaluate(() => document.getElementById("bigView").classList.contains("hidden")))) errors.push("photo click preview did not close");
 
-  // 真 HDR 模式不能分割
-  await page.select("#previewMode", "truehdr");
-  await page.waitForFunction('document.getElementById("hdrImg").src.indexOf("blob:") === 0 && document.getElementById("hdrImg").naturalWidth > 0', { timeout: 30000 });
-  const trueSplit = await page.evaluate(() => ({
-    disabled: document.querySelector('#viewTabs button[data-view="split"]').disabled,
-    view: state.view,
-  }));
-  console.log("true HDR split clickable:", JSON.stringify(trueSplit));
-  if (trueSplit.disabled) errors.push("split tab should stay clickable in true HDR mode");
-  // 真 HDR 模式下点击对比：应自动切回标准模拟并进入分割对比
-  await page.click('#viewTabs button[data-view="split"]');
-  await new Promise((r) => setTimeout(r, 700));
-  const recovered = await page.evaluate(() => ({ view: state.view, mode: els.previewMode.value }));
-  console.log("split recovered from true HDR:", JSON.stringify(recovered));
-  if (recovered.view !== "split" || recovered.mode !== "gain") errors.push("split click should fall back to standard simulation");
-  await page.select("#previewMode", "gain");
-  await new Promise((r) => setTimeout(r, 500));
+  // 切回「左右对比」再切回「HDR 效果」，四种模式互通
+  await page.click('#viewTabs button[data-view="side"]');
+  await new Promise((r) => setTimeout(r, 400));
+  const sideBack = await page.evaluate(() => ({ view: state.view, sideVisible: !document.getElementById("sideView").classList.contains("hidden") }));
+  console.log("back to side:", JSON.stringify(sideBack));
+  if (sideBack.view !== "side" || !sideBack.sideVisible) errors.push("side view did not reopen");
+  await shot("ui_v21_side.png");
+  await page.click('#viewTabs button[data-view="hdr"]');
+  await new Promise((r) => setTimeout(r, 300));
 
   // ---- 成品预览（全屏，无参数面板） ----
   await page.click("#previewBtn");

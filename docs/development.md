@@ -84,8 +84,11 @@ node tools/test_mobile.js tests/input_synthetic_12mp.jpg
 # 导入错误提示 / 缺少 JPEG 结束标记自动修复回归
 node tools/test_load_errors.js
 
-# 默认视图回归（真 HDR 后重新导入 / 真 HDR 下点对比）
+# 默认视图回归（桌面左右对比 / 手机拉手对比 / 四模式切换）
 node tools/test_default_view.js
+
+# 原生 HDR 预览（强制打开 HDR 路径；HDR效果 / 左右右图 / 拉手右半 / 实时重生成 / 诊断回退）
+node tools/test_native_hdr.js
 
 # TIF / TIFF 输入（传入你的 TIFF 文件；不传则尝试 tests/tif/）
 node tools/test_tif.js path/to/a.tif path/to/b.tif
