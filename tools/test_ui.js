@@ -35,6 +35,16 @@ const SHOTS = path.join(ROOT, "tests");
   await fi.uploadFile(path.join(ROOT, input));
   await page.waitForFunction('!document.getElementById("editor").classList.contains("hidden") && document.getElementById("cvSdr").width > 0', { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 700));
+  const afterLoad = await page.evaluate(() => ({
+    view: state.view,
+    headerBtn: getComputedStyle(document.getElementById("headerOpenBtn")).display,
+    drop: getComputedStyle(document.getElementById("drop")).display,
+    splitTags: !document.getElementById("tagL").classList.contains("hidden"),
+  }));
+  console.log("after load:", JSON.stringify(afterLoad));
+  if (afterLoad.view !== "split" || !afterLoad.splitTags) errors.push("desktop should default to split view");
+  if (afterLoad.headerBtn === "none") errors.push("header open button should be visible");
+  if (afterLoad.drop !== "none") errors.push("compact drop bar should be hidden after load");
 
   async function setSlider(id, value) {
     await page.evaluate((id, v) => {

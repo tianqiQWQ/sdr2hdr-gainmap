@@ -27,6 +27,15 @@ const SHOTS = path.join(ROOT, "tests");
   await (await page.$("#file")).uploadFile(path.join(ROOT, input));
   await page.waitForFunction('!document.getElementById("mobileParams").classList.contains("hidden")', { timeout: 30000 });
   await new Promise((r) => setTimeout(r, 900));
+  const mobileDefault = await page.evaluate(() => ({
+    view: state.view,
+    headerBtn: getComputedStyle(document.getElementById("headerOpenBtn")).display,
+    drop: getComputedStyle(document.getElementById("drop")).display,
+  }));
+  console.log("mobile default:", JSON.stringify(mobileDefault));
+  if (mobileDefault.view !== "hdr") errors.push("mobile should keep HDR as default view");
+  if (mobileDefault.headerBtn !== "none") errors.push("header open button should stay hidden on mobile");
+  if (mobileDefault.drop !== "none") errors.push("mobile drop bar should be hidden after load");
 
   const layout = await page.evaluate(() => {
     const disp = (id) => getComputedStyle(document.getElementById(id)).display;

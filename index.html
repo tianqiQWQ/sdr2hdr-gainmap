@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SDR → HDR 转换器（本地网页版）v0.17</title>
+<title>SDR → HDR 转换器（本地网页版）v0.18</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -16,9 +16,31 @@
     font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
     display: flex; flex-direction: column; overflow: hidden;
   }
-  header { padding: 12px 20px 10px; border-bottom: 1px solid var(--line); flex: none; }
-  /* 载入图片后收起说明文字，把空间让给中间大图（版本更新说明保留） */
+  header {
+    padding: 12px 20px 10px; border-bottom: 1px solid var(--line); flex: none;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  }
+  .header-text { flex: 1; min-width: 0; }
+  .header-open {
+    flex: none; display: none; align-items: center; gap: 6px;
+    background: #232a36; color: var(--fg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 13px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+  }
+  .header-open:hover { border-color: var(--accent); color: var(--accent); }
+  body.loaded .header-open { display: inline-flex; }
+  /* 载入图片后收起说明文字与拖入横条，把空间让给中间大图 */
   body.loaded header p { display: none; }
+  body.loaded .drop { display: none !important; }
+
+  .drag-overlay {
+    position: fixed; inset: 0; z-index: 200; pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(6, 10, 16, .78); border: 2px dashed var(--accent);
+    color: #cfe2ff; font-size: 16px; font-weight: 600; letter-spacing: .04em;
+    backdrop-filter: blur(2px);
+  }
+  .drag-overlay.hidden { display: none !important; }
   h1 { font-size: 18px; margin: 0 0 6px; font-weight: 600; }
   header p { margin: 0; color: var(--muted); font-size: 13px; max-width: 920px; }
   .ver-note { color: #7f8a9b; font-size: 12px; margin: -2px 0 8px; }
@@ -219,6 +241,8 @@
       flex: 0 0 auto; padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px;
       display: flex; align-items: center; justify-content: space-between;
     }
+    .header-text { flex: 1; min-width: 0; }
+    .header-open { display: none !important; }
     header h1 { font-size: 16px; margin: 0; line-height: 1.25; }
     header p { display: none; }
     .ver-note { display: none; }
@@ -389,10 +413,13 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.17 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.17 更新：编辑页改为单张大图 + 顶部「SDR / HDR / 对比」切换，拖动白色分割线实时对比；右侧参数栏缩窄，照片占比更大</div>
-  <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
-     <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
+  <div class="header-text">
+    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.18 · 本地处理，不上传</span></h1>
+    <div class="ver-note">v0.18 更新：载入后默认进入对比视图；顶部「拖入」条改为标题右侧小按钮，支持拖到页面任意位置换图</div>
+    <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
+       <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
+  </div>
+  <button type="button" id="headerOpenBtn" class="header-open" title="打开另一张图片">打开图片</button>
 </header>
 <main>
   <div class="drop" id="drop" tabindex="0" role="button">
@@ -408,8 +435,8 @@
       <div class="view-toolbar">
         <div class="view-seg" id="viewTabs" role="group" aria-label="视图">
           <button type="button" data-view="sdr" aria-pressed="false">SDR 原图</button>
-          <button type="button" data-view="hdr" aria-pressed="true">HDR 效果</button>
-          <button type="button" data-view="split" aria-pressed="false">对比</button>
+          <button type="button" data-view="hdr" aria-pressed="false">HDR 效果</button>
+          <button type="button" data-view="split" aria-pressed="true">对比</button>
         </div>
         <span class="view-hint" id="viewHint">拖动白色分割线，对比 SDR / HDR（左 SDR · 右 HDR）</span>
       </div>
@@ -608,6 +635,7 @@
 </nav>
 
 <!-- 成品预览（全屏） -->
+<div id="dragOverlay" class="drag-overlay hidden">松开以打开图片</div>
 <div id="bigView" class="big-view hidden">
   <div class="big-top">
     <div class="big-title">
@@ -1479,7 +1507,7 @@ const state = {
   pressSdrTimer: 0,
   pressSdrActive: false,
   pressSdrUsed: false,
-  view: "hdr",
+  view: "split",
   split: 0.5,
   splitDrag: false,
   framePress: null,
@@ -1488,6 +1516,8 @@ const state = {
 
 const els = {
   drop: document.getElementById("drop"),
+  headerOpenBtn: document.getElementById("headerOpenBtn"),
+  dragOverlay: document.getElementById("dragOverlay"),
   file: document.getElementById("file"),
   editor: document.getElementById("editor"),
   result: document.getElementById("result"),
@@ -2494,7 +2524,8 @@ async function loadFileCore(file) {
   updateExportLabels();
   updateExportInfo();
 
-  state.view = "hdr";
+  // 桌面载入后默认进入左右对比；手机保持原来的 HDR 视图（手机布局暂不动）
+  state.view = (window.matchMedia && window.matchMedia("(max-width: 960px)").matches) ? "hdr" : "split";
   state.split = 0.5;
   updateParamLabels();
   updateViewTabs();
@@ -3537,6 +3568,7 @@ function bindUi() {
   if (els.loadError) els.loadError.addEventListener("click", (e) => {
     if (e.target && e.target.closest && e.target.closest(".le-close")) hideLoadError();
   });
+  if (els.headerOpenBtn) els.headerOpenBtn.addEventListener("click", () => els.file.click());
   els.drop.addEventListener("click", () => els.file.click());
   els.drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") els.file.click(); });
   els.file.addEventListener("change", () => loadFile(els.file.files[0]));
@@ -3551,8 +3583,34 @@ function bindUi() {
     const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) loadFile(f);
   });
-  document.addEventListener("dragover", (e) => e.preventDefault());
-  document.addEventListener("drop", (e) => e.preventDefault());
+
+  // 载入后拖入横条会被隐藏：支持把文件拖到页面任意位置换图
+  const hasFileDrag = (e) => {
+    const types = e.dataTransfer && e.dataTransfer.types;
+    return types && Array.from(types).includes("Files");
+  };
+  const showDragOverlay = () => { if (els.dragOverlay) els.dragOverlay.classList.remove("hidden"); };
+  const hideDragOverlay = () => { if (els.dragOverlay) els.dragOverlay.classList.add("hidden"); };
+  document.addEventListener("dragenter", (e) => {
+    if (!hasFileDrag(e)) return;
+    e.preventDefault(); showDragOverlay();
+  });
+  document.addEventListener("dragover", (e) => {
+    if (!hasFileDrag(e)) return;
+    e.preventDefault(); showDragOverlay();
+  });
+  document.addEventListener("dragleave", (e) => {
+    if (e.relatedTarget === null) hideDragOverlay();
+  });
+  document.addEventListener("drop", (e) => {
+    e.preventDefault();
+    hideDragOverlay();
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f) return;
+    // 初始的大拖入区自己会处理，避免重复加载
+    if (e.target && e.target.closest && e.target.closest("#drop")) return;
+    loadFile(f);
+  });
 
   const sliders = [els.strength, els.knee, els.detail, els.color, els.curvePow,
                    els.detailRadius, els.clarity, els.portraitStrength,
@@ -3714,7 +3772,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.17",
+  version: "0.18",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;
