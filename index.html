@@ -2672,6 +2672,8 @@ async function loadFileCore(file) {
     els.previewMode.value = "gain";
   }
   // 预览用的原生 HDR 图属于上一张图，先作废；随后按新图重新生成
+  clearTimeout(state.hdrPreviewTimer);
+  state.hdrPreviewSeq++; // 让上一张图仍在生成中的异步结果失效
   if (state.hdrPreviewUrl) {
     const oldUrl = state.hdrPreviewUrl;
     state.hdrPreviewUrl = null;
