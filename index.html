@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SDR → HDR 转换器（本地网页版）v0.19</title>
+<title>SDR → HDR 转换器（本地网页版）v0.20</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -414,8 +414,8 @@
 <body>
 <header>
   <div class="header-text">
-    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.19 · 本地处理，不上传</span></h1>
-    <div class="ver-note">v0.19 更新：载入后统一默认进入对比视图（桌面与手机一致）</div>
+    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.20 · 本地处理，不上传</span></h1>
+    <div class="ver-note">v0.20 更新：修复导入后未默认进入对比的问题；对比按钮始终可用</div>
     <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
        <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
   </div>
@@ -1733,7 +1733,7 @@ function updateViewTabs() {
   els.viewTabs.querySelectorAll("button").forEach((b) => {
     const v = b.dataset.view;
     b.setAttribute("aria-pressed", String(v === state.view));
-    if (v === "split") b.disabled = modeTrue;
+    b.disabled = false;
   });
 }
 
@@ -1766,7 +1766,7 @@ function updateViewHint() {
 function setView(v) {
   if (!["sdr", "hdr", "split"].includes(v)) return;
   if (v === "split" && els.previewMode.value === "truehdr") {
-    // 真 HDR 是整图原生渲染，不能分割；自动切回标准模拟
+    // 真 HDR 是整图原生渲染，不能分割；点击对比时自动切回标准模拟，而不是禁用按钮
     els.previewMode.value = "gain";
     setPreviewModeUi();
     if (state.bitmap) renderPreview();
@@ -2524,6 +2524,10 @@ async function loadFileCore(file) {
   updateExportLabels();
   updateExportInfo();
 
+  // 载入新图时重置显示模式，避免上次选过“真 HDR”等模式把默认对比顶掉
+  if (els.previewMode && els.previewMode.value !== "gain") {
+    els.previewMode.value = "gain";
+  }
   // 载入后统一默认进入左右对比（桌面 / 手机 / 窄窗口一致）
   state.view = "split";
   state.split = 0.5;
@@ -2532,6 +2536,9 @@ async function loadFileCore(file) {
   applyAssistVisibility();
   renderSdrBase();
   renderPreview();
+  state.view = "split";
+  updateViewTabs();
+  updateViewHint();
   drawViewer();
   updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
 
@@ -3772,7 +3779,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.19",
+  version: "0.20",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;

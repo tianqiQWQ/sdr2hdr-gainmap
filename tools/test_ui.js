@@ -216,8 +216,14 @@ const SHOTS = path.join(ROOT, "tests");
     disabled: document.querySelector('#viewTabs button[data-view="split"]').disabled,
     view: state.view,
   }));
-  console.log("true HDR split disabled:", JSON.stringify(trueSplit));
-  if (!trueSplit.disabled) errors.push("split tab should be disabled in true HDR mode");
+  console.log("true HDR split clickable:", JSON.stringify(trueSplit));
+  if (trueSplit.disabled) errors.push("split tab should stay clickable in true HDR mode");
+  // 真 HDR 模式下点击对比：应自动切回标准模拟并进入分割对比
+  await page.click('#viewTabs button[data-view="split"]');
+  await new Promise((r) => setTimeout(r, 700));
+  const recovered = await page.evaluate(() => ({ view: state.view, mode: els.previewMode.value }));
+  console.log("split recovered from true HDR:", JSON.stringify(recovered));
+  if (recovered.view !== "split" || recovered.mode !== "gain") errors.push("split click should fall back to standard simulation");
   await page.select("#previewMode", "gain");
   await new Promise((r) => setTimeout(r, 500));
 
