@@ -62,7 +62,7 @@ const SHOTS = path.join(ROOT, "tests");
       isTiff: state.isTiff,
       note: document.getElementById("note").innerText.replace(/\s+/g, " ").slice(0, 160),
       metaFormat: (document.getElementById("meta").innerText.match(/输入格式[^\n]*/) || [""])[0],
-      caption: document.getElementById("sdrCaption").textContent.slice(0, 60),
+      hint: document.getElementById("viewHint").textContent.slice(0, 60),
     }));
     console.log("load ms:", elapsed);
     console.log("info:", JSON.stringify(info));

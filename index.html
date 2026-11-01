@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SDR → HDR 转换器（本地网页版）v0.16</title>
+<title>SDR → HDR 转换器（本地网页版）v0.17</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -17,6 +17,8 @@
     display: flex; flex-direction: column; overflow: hidden;
   }
   header { padding: 12px 20px 10px; border-bottom: 1px solid var(--line); flex: none; }
+  /* 载入图片后收起说明文字，把空间让给中间大图（版本更新说明保留） */
+  body.loaded header p { display: none; }
   h1 { font-size: 18px; margin: 0 0 6px; font-weight: 600; }
   header p { margin: 0; color: var(--muted); font-size: 13px; max-width: 920px; }
   .ver-note { color: #7f8a9b; font-size: 12px; margin: -2px 0 8px; }
@@ -50,7 +52,7 @@
     text-transform: uppercase; margin: 0 0 2px;
   }
   @media (max-width: 1180px) {
-    .app-shell { grid-template-columns: minmax(0, 1fr) 344px; }
+    .app-shell { grid-template-columns: minmax(0, 1fr) 336px; }
   }
   @media (max-width: 900px) {
     html, body { height: auto; }
@@ -228,7 +230,12 @@
       flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; height: 100%;
     }
     .app-shell { grid-template-columns: 1fr; height: 100%; min-height: 0; display: flex; flex-direction: column; align-items: stretch; }
-    .viewer { flex: 1 1 auto; min-height: 0; height: auto; width: 100%; overflow: hidden; display: flex; }
+    .viewer { flex: 1 1 auto; min-height: 0; height: auto; width: 100%; overflow: hidden; display: flex; border: 0; border-radius: 0; }
+    .view-toolbar { padding: 4px 6px; gap: 6px; }
+    .view-seg button { padding: 6px 10px; font-size: 12px; }
+    .view-hint { display: none; }
+    .stage { padding: 4px; }
+    .press-hint { display: block; }
     .previews {
       flex: 1 1 auto; min-height: 0; height: 100%; padding: 4px; margin: 0;
       display: flex; align-items: center; justify-content: center; grid-template-columns: 1fr;
@@ -270,6 +277,62 @@
     #exportScreen { flex: 0 0 auto; }
     .screen { flex: 0 0 auto; overflow: visible; }
   }
+
+  /* ===== 单张大图工作台（参考胶片工作台思路） ===== */
+  .view-toolbar {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .view-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .view-seg button {
+    background: #171a21; color: var(--muted); border: 0; padding: 7px 14px;
+    font-size: 13px; cursor: pointer;
+  }
+  .view-seg button + button { border-left: 1px solid var(--line); }
+  .view-seg button[aria-pressed="true"] { background: var(--accent); color: #06121f; font-weight: 600; }
+  .view-seg button:disabled { opacity: .4; cursor: default; }
+  .view-hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .stage {
+    flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    padding: 10px; background: #080a0e;
+  }
+  .frame {
+    position: relative; touch-action: none; overflow: hidden;
+    box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.45);
+    border-radius: 4px; background: #000;
+  }
+  #cvView, #hdrImg { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .offscreen { display: none !important; }
+  .splitbar {
+    position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid #fff;
+    z-index: 6; pointer-events: none; box-shadow: 0 0 0 1px rgba(0,0,0,.45);
+  }
+  .splitbar i {
+    position: absolute; top: 50%; left: -13px; width: 26px; height: 26px; margin-top: -13px;
+    border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.55);
+  }
+  .splitbar i::before, .splitbar i::after {
+    content: ""; position: absolute; top: 8px; border: 5px solid transparent;
+  }
+  .splitbar i::before { left: 2px; border-right-color: #1a1d24; }
+  .splitbar i::after { right: 2px; border-left-color: #1a1d24; }
+  .frame.split-mode .press-hint { display: none !important; }
+  .view-tag {
+    position: absolute; bottom: 8px; z-index: 7; color: #fff; font-size: 11px;
+    background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 4px; letter-spacing: .04em;
+    pointer-events: none;
+  }
+  #tagL { left: 8px; }
+  #tagR { right: 8px; }
+  .view-options { justify-content: space-between; }
+  .view-options .sel select { background: #232a36; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font-size: 12px; }
+  .hdr-link { padding: 4px 0 0; }
+  .hdr-link a { color: var(--accent); font-size: 12px; text-decoration: none; }
+  .hdr-link a:hover { text-decoration: underline; }
+  .viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%;
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #0b0d11; }
+  .app-shell { grid-template-columns: minmax(0, 1fr) 360px; }
 
   /* ===== 底部导航（编辑 / 成品预览 / 导出） ===== */
   .bottom-bar {
@@ -326,8 +389,8 @@
 </head>
 <body>
 <header>
-  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.16 · 本地处理，不上传</span></h1>
-  <div class="ver-note">v0.16 更新：手机端改为固定顶栏 + 底部参数/导航 + 中间自适应照片，调整参数不再需要上下滑动</div>
+  <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.17 · 本地处理，不上传</span></h1>
+  <div class="ver-note">v0.17 更新：编辑页改为单张大图 + 顶部「SDR / HDR / 对比」切换，拖动白色分割线实时对比；右侧参数栏缩窄，照片占比更大</div>
   <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
      <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
 </header>
@@ -342,23 +405,27 @@
   <section id="editor" class="hidden">
     <div class="app-shell">
     <section class="viewer">
-    <div class="previews" id="previews">
-      <figure id="figSdr">
-        <canvas id="cvSdr"></canvas>
-        <figcaption id="sdrCaption">SDR 原图 —— 普通屏、旧软件、不支持 gain map 的浏览器看到的样子（与导出文件完全一致）</figcaption>
-      </figure>
-      <figure id="figHdr">
-        <canvas id="cvHdr"></canvas>
-        <img id="hdrImg" class="hidden" alt="真 HDR 预览">
-        <canvas id="cvPressSdr" class="press-sdr hidden"></canvas>
-        <div class="press-hint">按住画面看 SDR · 点按看成品预览</div>
-        <figcaption id="captionHdr">HDR 增益示意</figcaption>
-        <div class="hdr-link hidden" id="hdrLinkWrap">
-          <a id="hdrLink" href="#" target="_blank" rel="noopener">在新标签打开真 HDR 预览（原生渲染）</a>
+      <div class="view-toolbar">
+        <div class="view-seg" id="viewTabs" role="group" aria-label="视图">
+          <button type="button" data-view="sdr" aria-pressed="false">SDR 原图</button>
+          <button type="button" data-view="hdr" aria-pressed="true">HDR 效果</button>
+          <button type="button" data-view="split" aria-pressed="false">对比</button>
         </div>
-        <div class="fig-hint">点击画面 → 成品预览（按当前参数与最终导出分辨率生成）</div>
-      </figure>
-    </div>
+        <span class="view-hint" id="viewHint">拖动白色分割线，对比 SDR / HDR（左 SDR · 右 HDR）</span>
+      </div>
+      <div class="stage" id="viewStage">
+        <div class="frame" id="viewFrame">
+          <canvas id="cvView"></canvas>
+          <img id="hdrImg" class="hidden" alt="真 HDR 预览">
+          <canvas id="cvPressSdr" class="press-sdr hidden"></canvas>
+          <div class="splitbar hidden" id="splitBar"><i></i></div>
+          <span class="view-tag hidden" id="tagL">SDR</span>
+          <span class="view-tag hidden" id="tagR">HDR</span>
+          <div class="press-hint">按住画面看 SDR · 点按看成品预览</div>
+        </div>
+      </div>
+      <canvas id="cvSdr" class="offscreen"></canvas>
+      <canvas id="cvHdr" class="offscreen"></canvas>
     </section>
 
     <aside class="side-panel" id="sidePanel">
@@ -370,17 +437,20 @@
 
       <div class="side-title" style="margin-top:14px">参数</div>
       <div class="controls">
-      <div class="ctl-row">
-        <label class="chk"><input type="checkbox" id="showAssist" checked> 显示 HDR 辅助（预览 + 直方图）</label>
-        <label class="sel">预览模式
+      <div class="ctl-row view-options">
+        <label class="sel">HDR 显示
           <select id="previewMode">
-            <option value="gain" selected>增益示意（不压暗）</option>
+            <option value="gain" selected>标准模拟（不压暗）</option>
             <option value="headroom">亮度余量（压暗）</option>
             <option value="heatmap">增益热力图</option>
             <option value="gainmap">增益图（灰度）</option>
-            <option value="truehdr">真 HDR 预览（原生渲染）</option>
+            <option value="truehdr">真 HDR（原生渲染）</option>
           </select>
         </label>
+        <label class="chk"><input type="checkbox" id="showAssist" checked> 显示直方图</label>
+      </div>
+      <div class="hdr-link hidden" id="hdrLinkWrap">
+        <a id="hdrLink" href="#" target="_blank" rel="noopener">在新标签打开真 HDR 预览（原生渲染）</a>
       </div>
 
       <div class="ctl-grid">
@@ -1213,7 +1283,8 @@ function renderPreview() {
   };
   drawHistogram(hist, hdrStops, stats.hdrFrac, { r: histR, g: histG, b: histB, lum: histLum });
   state.previewStats = stats;
-  updateHdrCaption();
+  updateViewHint();
+  drawViewer();
   if (mode === "truehdr") scheduleTrueHdrPreview();
   return stats;
 }
@@ -1408,6 +1479,11 @@ const state = {
   pressSdrTimer: 0,
   pressSdrActive: false,
   pressSdrUsed: false,
+  view: "hdr",
+  split: 0.5,
+  splitDrag: false,
+  framePress: null,
+  suppressFrameClick: false,
 };
 
 const els = {
@@ -1418,18 +1494,23 @@ const els = {
   resultText: document.getElementById("resultText"),
   resultClose: document.getElementById("resultClose"),
   loadError: document.getElementById("loadError"),
-  previews: document.getElementById("previews"),
-  figHdr: document.getElementById("figHdr"),
   histFig: document.getElementById("histFig"),
   hist: document.getElementById("hist"),
   histCaption: document.getElementById("histCaption"),
   cvSdr: document.getElementById("cvSdr"),
   cvHdr: document.getElementById("cvHdr"),
+  cvView: document.getElementById("cvView"),
+  viewTabs: document.getElementById("viewTabs"),
+  viewHint: document.getElementById("viewHint"),
+  viewStage: document.getElementById("viewStage"),
+  viewFrame: document.getElementById("viewFrame"),
+  splitBar: document.getElementById("splitBar"),
+  tagL: document.getElementById("tagL"),
+  tagR: document.getElementById("tagR"),
   cvPressSdr: document.getElementById("cvPressSdr"),
   hdrImg: document.getElementById("hdrImg"),
   hdrLink: document.getElementById("hdrLink"),
   hdrLinkWrap: document.getElementById("hdrLinkWrap"),
-  captionHdr: document.getElementById("captionHdr"),
   showAssist: document.getElementById("showAssist"),
   previewMode: document.getElementById("previewMode"),
   strength: document.getElementById("strength"),
@@ -1443,7 +1524,6 @@ const els = {
   exposureEv: document.getElementById("exposureEv"),
   exposureVal: document.getElementById("exposureVal"),
   exposureOnly: document.getElementById("exposureOnly"),
-  sdrCaption: document.getElementById("sdrCaption"),
   curvePow: document.getElementById("curvePow"),
   curveVal: document.getElementById("curveVal"),
   detailRadius: document.getElementById("detailRadius"),
@@ -1534,7 +1614,7 @@ function setStatus(msg, isWarn) {
       state.hdrHigh = mqHigh.matches;
       state.hdrStandard = mqStd.matches;
       if (state.bitmap) {
-        updateHdrCaption();
+        updateViewHint();
         updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
       }
     };
@@ -1554,12 +1634,128 @@ function hdrSupportText() {
   return "未知（浏览器不支持 dynamic-range 检测）";
 }
 
+/** 根据当前 view / split 把隐藏的 SDR / HDR 画布合成到显示画布 */
+function drawViewer() {
+  const vc = els.cvView;
+  if (!vc || !state.bitmap) return;
+  const srcW = els.cvHdr.width || els.cvSdr.width;
+  const srcH = els.cvHdr.height || els.cvSdr.height;
+  if (!srcW || !srcH) return;
+  vc.width = srcW; vc.height = srcH;
+  const ctx = vc.getContext("2d");
+  const mode = els.previewMode.value;
+  const isTrue = state.view === "hdr" && mode === "truehdr";
+  els.hdrImg.classList.toggle("hidden", !isTrue);
+  vc.classList.toggle("hidden", isTrue);
+  const splitOn = state.view === "split";
+  els.viewFrame.classList.toggle("split-mode", splitOn);
+  els.splitBar.classList.toggle("hidden", !splitOn);
+  els.tagL.classList.toggle("hidden", !splitOn);
+  els.tagR.classList.toggle("hidden", !splitOn);
+  if (isTrue) {
+    if (els.hdrImg.src) {
+      els.hdrImg.style.display = "block";
+      els.hdrImg.style.width = "100%";
+      els.hdrImg.style.height = "100%";
+    }
+    fitViewFrame();
+    return;
+  }
+  ctx.clearRect(0, 0, srcW, srcH);
+  if (state.view === "sdr") {
+    ctx.drawImage(els.cvSdr, 0, 0);
+  } else if (state.view === "hdr") {
+    ctx.drawImage(els.cvHdr, 0, 0);
+  } else {
+    // 左 SDR / 右 HDR
+    ctx.drawImage(els.cvHdr, 0, 0);
+    const sx = Math.round(state.split * srcW);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, sx, srcH);
+    ctx.clip();
+    ctx.drawImage(els.cvSdr, 0, 0);
+    ctx.restore();
+    els.splitBar.style.left = (state.split * 100) + "%";
+  }
+  fitViewFrame();
+}
+
+/** 把 frame 缩放到 stage 内（保持照片比例，最大化显示） */
+function fitViewFrame() {
+  const frame = els.viewFrame, stage = els.viewStage;
+  if (!frame || !stage) return;
+  const vc = els.cvView;
+  const w = (vc && vc.width) || (state.bitmap && state.bitmap.width) || 0;
+  const h = (vc && vc.height) || (state.bitmap && state.bitmap.height) || 0;
+  if (!w || !h) return;
+  const r = stage.getBoundingClientRect();
+  const availW = Math.max(1, r.width - 20);
+  const availH = Math.max(1, r.height - 20);
+  const k = Math.min(availW / w, availH / h);
+  frame.style.width = Math.max(1, Math.floor(w * k)) + "px";
+  frame.style.height = Math.max(1, Math.floor(h * k)) + "px";
+}
+
+function updateViewTabs() {
+  if (!els.viewTabs) return;
+  const modeTrue = els.previewMode.value === "truehdr";
+  els.viewTabs.querySelectorAll("button").forEach((b) => {
+    const v = b.dataset.view;
+    b.setAttribute("aria-pressed", String(v === state.view));
+    if (v === "split") b.disabled = modeTrue;
+  });
+}
+
+function updateViewHint() {
+  if (!els.viewHint) return;
+  const mode = els.previewMode.value;
+  const p = readParams();
+  const M = 3.0 * (p.strength / 100);
+  const E = Math.max(0, p.exposureEv || 0);
+  const peak = Math.pow(2, Math.max(0.001, p.exposureOnly && E > 0.001 ? E : E + M));
+  let txt = "";
+  if (state.view === "sdr") {
+    txt = "SDR 原图 —— 普通屏 / 旧软件 / 不支持 gain map 的地方看到的就是它";
+  } else if (state.view === "split") {
+    txt = "拖动白色分割线对比 SDR / HDR（左 SDR · 右 HDR；HDR 侧为 SDR 模拟画面）";
+  } else if (mode === "truehdr") {
+    txt = `真 HDR 预览 —— 浏览器原生渲染 gain map（本机 HDR：${hdrSupportText()}）；最终效果请看成品预览或导出文件`;
+  } else if (mode === "gainmap") {
+    txt = "增益图灰度 —— 越白 = HDR 屏上提亮越多，黑色 = 不变（不是真实画面）";
+  } else if (mode === "heatmap") {
+    txt = "增益热力图 —— 颜色越亮 = HDR 屏上提亮越多（不是真实画面）";
+  } else if (mode === "headroom") {
+    txt = "亮度余量示意 —— 压暗画面来表现高光余量；导出文件的 SDR 部分不变";
+  } else {
+    txt = `HDR 效果（模拟）—— 发白区域会被提亮，最高约 ${peak.toFixed(1)}×；真实 HDR 请看成品预览`;
+  }
+  els.viewHint.textContent = txt;
+}
+
+function setView(v) {
+  if (!["sdr", "hdr", "split"].includes(v)) return;
+  if (v === "split" && els.previewMode.value === "truehdr") {
+    // 真 HDR 是整图原生渲染，不能分割；自动切回标准模拟
+    els.previewMode.value = "gain";
+    setPreviewModeUi();
+    if (state.bitmap) renderPreview();
+  }
+  state.view = v;
+  updateViewTabs();
+  updateViewHint();
+  drawViewer();
+}
+
 function setPreviewModeUi() {
   const mode = els.previewMode.value;
   const isTrue = mode === "truehdr";
-  if (els.cvHdr) els.cvHdr.classList.toggle("hidden", isTrue);
-  if (els.hdrImg) els.hdrImg.classList.toggle("hidden", !isTrue);
   if (els.hdrLinkWrap) els.hdrLinkWrap.classList.toggle("hidden", !isTrue);
+  if (isTrue && state.view === "split") state.view = "hdr";
+  if (isTrue) scheduleTrueHdrPreview();
+  updateViewTabs();
+  updateViewHint();
+  drawViewer();
 }
 
 function scheduleTrueHdrPreview() {
@@ -1592,6 +1788,8 @@ async function updateTrueHdrPreview() {
     state.hdrPreviewUrl = url;
     els.hdrImg.src = url;
     els.hdrLink.href = url;
+    els.hdrImg.onload = () => { if (state.view === "hdr" && els.previewMode.value === "truehdr") drawViewer(); };
+    if (state.view === "hdr" && els.previewMode.value === "truehdr") drawViewer();
     if (old) setTimeout(() => URL.revokeObjectURL(old), 15000);
   } catch (e) {
     console.error("真 HDR 预览生成失败:", e);
@@ -1646,7 +1844,7 @@ function updateParamLabels() {
   els.exposureVal.textContent = ev > 0.001
     ? `+${ev.toFixed(1)} EV（仅 HDR）`
     : "0（不改变底图）";
-  updateSdrCaption();
+  updateViewHint();
   applyExposureOnlyUi();
   updateMobileChips();
 }
@@ -1677,48 +1875,9 @@ function applyExposureOnlyUi() {
   }
 }
 
-function updateSdrCaption() {
-  if (!els.sdrCaption) return;
-  const ev = parseFloat(els.exposureEv.value) || 0;
-  if (ev > 0.001) {
-    els.sdrCaption.textContent = "SDR 原图（保持不变）—— 普通屏 / 旧软件看到的就是它；整体曝光只作用于 HDR 显示，不会修改底图";
-  } else if (state.isTiff) {
-    els.sdrCaption.textContent = "SDR 底图（TIF 已转成 JPEG）—— 普通屏 / 旧软件看到的就是它；HDR 屏在此基础上高光再增强";
-  } else if (state.isPng) {
-    els.sdrCaption.textContent = "SDR 底图（PNG 已转成 JPEG）—— 普通屏 / 旧软件看到的就是它；HDR 屏在此基础上高光再增强";
-  } else {
-    els.sdrCaption.textContent = "SDR 原图 —— 普通屏、旧软件、不支持 gain map 的浏览器看到的样子（与导出文件完全一致）";
-  }
-}
-
-function updateHdrCaption() {
-  const mode = els.previewMode.value;
-  const p = readParams();
-  const M = 3.0 * (p.strength / 100);
-  const E = Math.max(0, p.exposureEv || 0);
-  const peak = Math.pow(2, Math.max(0.001, p.exposureOnly && E > 0.001 ? E : E + M));
-  if (mode === "truehdr") {
-    els.captionHdr.textContent = `真 HDR 预览 —— 由浏览器原生渲染 gain map（本机 HDR：${hdrSupportText()}）。若这里和左侧 SDR 看起来一样，说明当前浏览器没有启用 HDR 图片渲染：macOS 上请用 Safari 打开本页，或直接看导出的 JPG。最终质量/水印请在「成品预览」或导出文件里确认。`;
-  } else if (mode === "gainmap") {
-    els.captionHdr.textContent = "增益图灰度预览 —— 越白 = HDR 屏上提亮越多，黑色 = 不变（增益图只提亮，不会让画面变暗）；这是增益分布，不是真实画面。";
-  } else if (mode === "heatmap") {
-    els.captionHdr.textContent = "增益热力图 —— 颜色越亮 = HDR 屏上提亮越多（黑色≈不变）；这是增益可视化，不是真实画面。";
-  } else if (mode === "headroom") {
-    els.captionHdr.textContent = "亮度余量示意 —— 压低整体亮度来表现“高光比 SDR 白亮多少”；整体变暗只是模拟方式，导出文件的 SDR 部分完全不变。";
-  } else {
-    els.captionHdr.textContent = `HDR 增益示意 —— 发白/变亮的区域就是 HDR 屏上会被提亮的区域（最高约 ${peak.toFixed(1)}×；示意，非真实画面）。`;
-  }
-  if (els.histCaption) {
-    let txt = "SDR / HDR 直方图 —— 左侧为 SDR 影调（8 档），白点右侧为 HDR 提亮区（0 到 +" + M.toFixed(1) + " 档，宽度按档数比例）";
-    if (state.previewStats) txt += "；HDR 高光像素约 " + (state.previewStats.hdrFrac * 100).toFixed(1) + "%";
-    els.histCaption.textContent = txt;
-  }
-}
-
 function applyAssistVisibility() {
   const on = els.showAssist.checked;
-  els.histFig.classList.toggle("hidden", !on);
-  els.previews.classList.toggle("single", !on);
+  if (els.histFig) els.histFig.classList.toggle("hidden", !on);
 }
 
 function updateMetaText(previewDims, outSize) {
@@ -1769,7 +1928,7 @@ function schedulePreview() {
     }
     if (state.bigPreviewOpen) {
       scheduleBigHdrPreview();
-    } else if (els.showAssist.checked) {
+    } else {
       renderPreview();
     }
     updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
@@ -2335,10 +2494,14 @@ async function loadFileCore(file) {
   updateExportLabels();
   updateExportInfo();
 
+  state.view = "hdr";
+  state.split = 0.5;
   updateParamLabels();
+  updateViewTabs();
   applyAssistVisibility();
   renderSdrBase();
-  if (els.showAssist.checked) renderPreview();
+  renderPreview();
+  drawViewer();
   updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
 
   const warns = [];
@@ -2993,7 +3156,7 @@ function closeBigView() {
   state.bigPreviewUrl = null;
   els.bigImg.removeAttribute("src");
   if (old) setTimeout(() => URL.revokeObjectURL(old), 3000);
-  if (state.bitmap && els.showAssist.checked) renderPreview();
+  if (state.bitmap) renderPreview();
   updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
 }
 
@@ -3405,48 +3568,87 @@ function bindUi() {
   });
   els.showAssist.addEventListener("change", () => {
     applyAssistVisibility();
-    if (state.bitmap && els.showAssist.checked) {
-      renderPreview();
-      updateMetaText(els.cvSdr.width + "×" + els.cvSdr.height, 0);
-    }
   });
   els.previewMode.addEventListener("change", () => {
     setPreviewModeUi();
-    if (!state.bitmap || !els.showAssist.checked) return;
+    if (!state.bitmap) return;
     renderPreview();
-    if (els.previewMode.value === "truehdr") updateTrueHdrPreview();
   });
   els.resetParams.addEventListener("click", () => {
     applyParamsToInputs(DEFAULT_PARAMS);
     updateParamLabels();
     schedulePreview();
   });
-  if (els.figHdr) els.figHdr.addEventListener("click", (e) => {
-    if (e.target && e.target.closest && e.target.closest("a")) return;
-    if (state.pressSdrUsed) { state.pressSdrUsed = false; return; }
+  // 顶部视图切换：SDR / HDR / 对比
+  if (els.viewTabs) {
+    els.viewTabs.querySelectorAll("button[data-view]").forEach((btn) => {
+      btn.addEventListener("click", () => setView(btn.dataset.view));
+    });
+  }
+  updateViewTabs();
+
+  // 中间大图：对比拖动 / 点击预览 / 触屏长按看 SDR
+  const frame = els.viewFrame;
+  const splitFromEvent = (e) => {
+    const r = frame.getBoundingClientRect();
+    state.split = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    drawViewer();
+  };
+  frame.addEventListener("contextmenu", (e) => { if (e.pointerType !== "mouse") e.preventDefault(); });
+  frame.addEventListener("pointerdown", (e) => {
+    if (!state.bitmap) return;
+    if (state.view === "split") {
+      e.preventDefault();
+      state.splitDrag = true;
+      state.suppressFrameClick = true;
+      try { frame.setPointerCapture(e.pointerId); } catch (_) {}
+      splitFromEvent(e);
+      return;
+    }
+    if (e.pointerType === "mouse") return;
+    clearTimeout(state.pressSdrTimer);
+    state.pressSdrUsed = false;
+    state.framePress = { x: e.clientX, y: e.clientY };
+    state.pressSdrTimer = setTimeout(() => {
+      state.pressSdrUsed = true;
+      showPressSdr();
+    }, 220);
+  });
+  frame.addEventListener("pointermove", (e) => {
+    if (state.splitDrag) { splitFromEvent(e); return; }
+    if (state.pressSdrTimer && state.framePress) {
+      if (Math.hypot(e.clientX - state.framePress.x, e.clientY - state.framePress.y) > 8) {
+        clearTimeout(state.pressSdrTimer);
+        state.pressSdrTimer = 0;
+      }
+    }
+  });
+  const endFramePointer = (e) => {
+    if (state.splitDrag) {
+      state.splitDrag = false;
+      try { frame.releasePointerCapture(e.pointerId); } catch (_) {}
+      state.suppressFrameClick = true;
+      return;
+    }
+    clearTimeout(state.pressSdrTimer);
+    state.pressSdrTimer = 0;
+    state.framePress = null;
+    if (state.pressSdrActive) { hidePressSdr(); state.pressSdrUsed = true; }
+  };
+  frame.addEventListener("pointerup", endFramePointer);
+  frame.addEventListener("pointercancel", endFramePointer);
+  frame.addEventListener("pointerleave", (e) => { if (!state.splitDrag && !state.pressSdrActive) clearTimeout(state.pressSdrTimer); });
+  frame.addEventListener("click", () => {
+    if (!state.bitmap) return;
+    if (state.view === "split") { state.suppressFrameClick = false; return; }
+    if (state.pressSdrUsed) { state.pressSdrUsed = false; state.suppressFrameClick = false; return; }
+    if (state.suppressFrameClick) { state.suppressFrameClick = false; return; }
     openBigView();
   });
-  if (els.figHdr) {
-    els.figHdr.addEventListener("contextmenu", (e) => {
-      if (e.pointerType !== "mouse") e.preventDefault();
-    });
-    els.figHdr.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "mouse") return;
-      clearTimeout(state.pressSdrTimer);
-      state.pressSdrUsed = false;
-      state.pressSdrTimer = setTimeout(() => {
-        state.pressSdrUsed = true;
-        showPressSdr();
-      }, 220);
-    });
-    const endPress = () => {
-      clearTimeout(state.pressSdrTimer);
-      if (state.pressSdrActive) { hidePressSdr(); state.pressSdrUsed = true; }
-    };
-    els.figHdr.addEventListener("pointerup", endPress);
-    els.figHdr.addEventListener("pointercancel", endPress);
-    els.figHdr.addEventListener("pointerleave", endPress);
+  if (typeof ResizeObserver !== "undefined" && els.viewStage) {
+    new ResizeObserver(() => fitViewFrame()).observe(els.viewStage);
   }
+  window.addEventListener("resize", () => fitViewFrame());
   if (els.bigClose) els.bigClose.addEventListener("click", closeBigView);
   if (els.bigFit) els.bigFit.addEventListener("click", () => els.bigStage.classList.remove("actual"));
   if (els.bigActual) els.bigActual.addEventListener("click", () => els.bigStage.classList.add("actual"));
@@ -3512,7 +3714,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.16",
+  version: "0.17",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;

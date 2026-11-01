@@ -32,40 +32,61 @@ const SHOTS = path.join(ROOT, "tests");
     const disp = (id) => getComputedStyle(document.getElementById(id)).display;
     const rr = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height), w: Math.round(r.width) }; };
     return {
-      figSdr: disp("figSdr"),
       sidePanel: disp("sidePanel"),
       mobileParams: disp("mobileParams"),
-      figHdr: disp("figHdr"),
+      viewTabs: disp("viewTabs"),
+      viewFrame: disp("viewFrame"),
       chips: document.querySelectorAll("#mChips .m-chip").length,
       dropHidden: getComputedStyle(document.getElementById("drop")).display === "none",
       scrollH: document.documentElement.scrollHeight,
       viewH: innerHeight,
-      figRect: rr("figHdr"), canvasRect: rr("cvHdr"), chipsRect: rr("mobileParams"), barRect: rr("bottomBar"),
+      frameRect: rr("viewFrame"), stageRect: rr("viewStage"), canvasRect: rr("cvView"),
+      chipsRect: rr("mobileParams"), barRect: rr("bottomBar"),
     };
   });
   console.log("mobile layout:", JSON.stringify(layout));
-  if (layout.figSdr !== "none") errors.push("SDR figure should be hidden on mobile");
   if (layout.sidePanel !== "none") errors.push("sidebar should be hidden on mobile");
   if (layout.mobileParams !== "block") errors.push("mobile parameter bar missing");
+  if (layout.viewTabs !== "flex") errors.push("mobile view tabs missing");
   if (layout.chips < 6) errors.push("mobile chips missing");
   if (!layout.dropHidden) errors.push("drop zone should be hidden after load on mobile");
   if (layout.scrollH !== layout.viewH) errors.push("mobile editor page should not scroll");
-  if (layout.figRect.bottom > layout.chipsRect.top + 1) errors.push("photo area overlaps bottom parameter bar");
-  if (layout.canvasRect.h > layout.figRect.h + 1 || layout.canvasRect.w > layout.figRect.w + 1) errors.push("photo does not fit in viewer");
+  if (layout.frameRect.bottom > layout.chipsRect.top + 1) errors.push("photo area overlaps bottom parameter bar");
+  if (layout.canvasRect.h > layout.frameRect.h + 1 || layout.canvasRect.w > layout.frameRect.w + 1) errors.push("photo does not fit in frame");
+  if (layout.stageRect.h < 100) errors.push("photo stage too small");
   if (layout.barRect.bottom !== layout.viewH) errors.push("bottom nav should be fixed at viewport bottom");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v16_mobile_edit.png") });
+  await page.screenshot({ path: path.join(SHOTS, "ui_v17_mobile_edit.png") });
+
+  // 顶部 SDR / HDR / 对比切换 + 对比分割线
+  await page.click('#viewTabs button[data-view="split"]');
+  await new Promise((r) => setTimeout(r, 400));
+  const split = await page.evaluate(() => ({
+    view: state.view,
+    bar: document.getElementById("splitBar").style.left,
+    tags: !document.getElementById("tagL").classList.contains("hidden") && !document.getElementById("tagR").classList.contains("hidden"),
+    histHintHidden: getComputedStyle(document.querySelector(".press-hint")).display === "none",
+    scrollH: document.documentElement.scrollHeight,
+    viewH: innerHeight,
+  }));
+  console.log("mobile split:", JSON.stringify(split));
+  if (split.view !== "split" || !split.tags) errors.push("mobile split view failed");
+  if (split.scrollH !== split.viewH) errors.push("mobile split made page scroll");
+  if (!split.histHintHidden) errors.push("press hint should be hidden in split mode");
+  await page.screenshot({ path: path.join(SHOTS, "ui_v17_mobile_split.png") });
+  await page.click('#viewTabs button[data-view="hdr"]');
+  await new Promise((r) => setTimeout(r, 300));
 
   // 按住画面 → 显示 SDR，松开恢复
   await page.evaluate(() => {
-    const el = document.getElementById("figHdr");
+    const el = document.getElementById("viewFrame");
     el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", clientX: 100, clientY: 300 }));
   });
   await new Promise((r) => setTimeout(r, 350));
   const pressOn = await page.evaluate(() => !document.getElementById("cvPressSdr").classList.contains("hidden"));
   console.log("press shows SDR:", pressOn);
   if (!pressOn) errors.push("press-to-SDR overlay not shown");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v13_press_sdr.png") });
-  await page.evaluate(() => document.getElementById("figHdr").dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch" })));
+  await page.screenshot({ path: path.join(SHOTS, "ui_v17_press_sdr.png") });
+  await page.evaluate(() => document.getElementById("viewFrame").dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch" })));
   await new Promise((r) => setTimeout(r, 300));
   const pressOff = await page.evaluate(() => document.getElementById("cvPressSdr").classList.contains("hidden"));
   console.log("release hides SDR:", pressOff);
@@ -80,7 +101,7 @@ const SHOTS = path.join(ROOT, "tests");
   }));
   console.log("mobile gainmap:", JSON.stringify(gm));
   if (gm.mode !== "gainmap" || !gm.active) errors.push("mobile gain map toggle failed");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v13_mobile_gainmap.png") });
+  await page.screenshot({ path: path.join(SHOTS, "ui_v17_mobile_gainmap.png") });
   await page.evaluate(() => [...document.querySelectorAll("#mChips .m-chip")].find((b) => b.dataset.param === "gainmap").click());
   await new Promise((r) => setTimeout(r, 500));
 
@@ -96,13 +117,13 @@ const SHOTS = path.join(ROOT, "tests");
       nan: document.getElementById("mSheet").innerText.indexOf("NaN") >= 0,
       scrollH: document.documentElement.scrollHeight,
       viewH: innerHeight,
-      figHdr: rr("figHdr"), chipsTop: rr("mobileParams").top, barBottom: rr("bottomBar").bottom,
+      viewFrame: rr("viewFrame"), chipsTop: rr("mobileParams").top, barBottom: rr("bottomBar").bottom,
     };
   });
   console.log("strength sheet:", JSON.stringify(sheet));
   if (!sheet.visible || sheet.rows !== 1 || sheet.nan) errors.push("mobile sheet state wrong");
   if (sheet.scrollH !== sheet.viewH) errors.push("sheet should not make the page scroll");
-  if (sheet.figHdr.bottom > sheet.chipsTop + 1) errors.push("sheet should push photo area up, not overlap");
+  if (sheet.viewFrame.bottom > sheet.chipsTop + 1) errors.push("sheet should push photo area up, not overlap");
   if (sheet.barBottom !== sheet.viewH) errors.push("bottom nav moved after sheet opened");
   await page.evaluate(() => {
     const inp = document.querySelector("#mSheet input[type=range]");
@@ -116,7 +137,7 @@ const SHOTS = path.join(ROOT, "tests");
   }));
   console.log("synced strength:", JSON.stringify(synced));
   if (synced.desktop !== "80" || !synced.chip.includes("80")) errors.push("mobile slider not synced");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v16_mobile_sheet.png") });
+  await page.screenshot({ path: path.join(SHOTS, "ui_v17_mobile_sheet.png") });
 
   // 高级参数面板
   await page.evaluate(() => [...document.querySelectorAll("#mChips .m-chip")].find((b) => b.dataset.param === "advanced").click());
@@ -124,7 +145,7 @@ const SHOTS = path.join(ROOT, "tests");
   const advRows = await page.evaluate(() => document.querySelectorAll("#mSheet .m-row").length);
   console.log("advanced sheet rows:", advRows);
   if (advRows < 5) errors.push("advanced mobile sheet incomplete");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v16_mobile_advanced.png") });
+  await page.screenshot({ path: path.join(SHOTS, "ui_v17_mobile_advanced.png") });
 
   // 导出界面：移动参数条与底栏隐藏
   await page.click("#exportBtn");
@@ -136,7 +157,7 @@ const SHOTS = path.join(ROOT, "tests");
   }));
   console.log("mobile export:", JSON.stringify(exp));
   if (!exp.exportVisible || !exp.chipsHidden || !exp.bottomHidden) errors.push("mobile export screen wrong");
-  await page.screenshot({ path: path.join(SHOTS, "ui_v16_mobile_export.png") });
+  await page.screenshot({ path: path.join(SHOTS, "ui_v17_mobile_export.png") });
 
   console.log("js errors:", errors.length ? errors : "none");
   if (errors.length) process.exitCode = 1;

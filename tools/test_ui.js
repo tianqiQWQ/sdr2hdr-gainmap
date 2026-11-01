@@ -95,15 +95,18 @@ const SHOTS = path.join(ROOT, "tests");
   // ---- 参数 / 曝光 / 高级 / 热力图 / 真 HDR 回归 ----
   await setSlider("exposureEv", 1.2);
   await new Promise((r) => setTimeout(r, 900));
-  const expInfo = await page.evaluate(() => ({
-    sdr: document.getElementById("sdrCaption").textContent,
-    meta: document.getElementById("meta").innerText,
-  }));
+  const expInfo = await page.evaluate(() => {
+    const meta = document.getElementById("meta").innerText;
+    document.querySelector('#viewTabs button[data-view="sdr"]').click();
+    const sdr = document.getElementById("viewHint").textContent;
+    document.querySelector('#viewTabs button[data-view="hdr"]').click();
+    return { sdr, meta };
+  });
   console.log("exposure UI (HDR-only):", JSON.stringify({
-    sdrKept: expInfo.sdr.includes("保持不变"),
+    sdrKept: expInfo.sdr.includes("SDR 原图"),
     metaHdrOnly: expInfo.meta.includes("仅作用于 HDR"),
   }));
-  if (!expInfo.sdr.includes("保持不变") || !expInfo.meta.includes("仅作用于 HDR")) errors.push("exposure should not modify SDR base");
+  if (!expInfo.sdr.includes("SDR 原图") || !expInfo.meta.includes("仅作用于 HDR")) errors.push("exposure should not modify SDR base");
   await shot("ui_v14_exposure.png");
 
   // 仅整体曝光：其他参数应被忽略（禁用）
@@ -155,11 +158,56 @@ const SHOTS = path.join(ROOT, "tests");
     for (let i = 0; i < d.length; i += 4 * 991) {
       if (Math.max(Math.abs(d[i] - d[i + 1]), Math.abs(d[i + 1] - d[i + 2]), Math.abs(d[i] - d[i + 2])) > 2) { gray = false; break; }
     }
-    return { gray, caption: document.getElementById("captionHdr").textContent.slice(0, 30) };
+    return { gray, hint: document.getElementById("viewHint").textContent.slice(0, 40) };
   });
   console.log("gainmap preview:", JSON.stringify(gmCheck));
   if (!gmCheck.gray) errors.push("gain map preview is not grayscale");
   await shot("ui_v13_gainmap_preview.png");
+  await page.select("#previewMode", "gain");
+  await new Promise((r) => setTimeout(r, 500));
+
+  // ---- 单张大图：SDR / HDR / 对比 ----
+  await page.click('#viewTabs button[data-view="split"]');
+  await new Promise((r) => setTimeout(r, 400));
+  const splitInit = await page.evaluate(() => ({
+    view: state.view,
+    bar: document.getElementById("splitBar").style.left,
+    tags: !document.getElementById("tagL").classList.contains("hidden") && !document.getElementById("tagR").classList.contains("hidden"),
+  }));
+  console.log("split view:", JSON.stringify(splitInit));
+  if (splitInit.view !== "split" || !splitInit.tags) errors.push("split view did not activate");
+  const frameBox = await (await page.$("#viewFrame")).boundingBox();
+  await page.mouse.move(frameBox.x + frameBox.width * 0.5, frameBox.y + frameBox.height * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(frameBox.x + frameBox.width * 0.76, frameBox.y + frameBox.height * 0.5, { steps: 8 });
+  await page.mouse.up();
+  await new Promise((r) => setTimeout(r, 300));
+  const splitDrag = await page.evaluate(() => ({ split: +state.split.toFixed(3), bar: document.getElementById("splitBar").style.left }));
+  console.log("split drag:", JSON.stringify(splitDrag));
+  if (splitDrag.split < 0.7) errors.push("split handle drag failed");
+  // 对比模式下点击画面不应打开成品预览
+  await page.click("#viewFrame");
+  await new Promise((r) => setTimeout(r, 300));
+  if (!(await page.evaluate(() => document.getElementById("bigView").classList.contains("hidden")))) errors.push("split click should not open preview");
+  await shot("ui_v17_split.png");
+  await page.click('#viewTabs button[data-view="hdr"]');
+  await new Promise((r) => setTimeout(r, 300));
+  // 单击画面 → 成品预览
+  await page.click("#viewFrame");
+  await page.waitForFunction('!document.getElementById("bigView").classList.contains("hidden")', { timeout: 10000 });
+  await page.keyboard.press("Escape");
+  await new Promise((r) => setTimeout(r, 500));
+  if (!(await page.evaluate(() => document.getElementById("bigView").classList.contains("hidden")))) errors.push("photo click preview did not close");
+
+  // 真 HDR 模式不能分割
+  await page.select("#previewMode", "truehdr");
+  await page.waitForFunction('document.getElementById("hdrImg").src.indexOf("blob:") === 0 && document.getElementById("hdrImg").naturalWidth > 0', { timeout: 30000 });
+  const trueSplit = await page.evaluate(() => ({
+    disabled: document.querySelector('#viewTabs button[data-view="split"]').disabled,
+    view: state.view,
+  }));
+  console.log("true HDR split disabled:", JSON.stringify(trueSplit));
+  if (!trueSplit.disabled) errors.push("split tab should be disabled in true HDR mode");
   await page.select("#previewMode", "gain");
   await new Promise((r) => setTimeout(r, 500));
 
@@ -190,8 +238,8 @@ const SHOTS = path.join(ROOT, "tests");
   // ---- 关闭辅助回归 ----
   await page.evaluate(() => { const cb = document.getElementById("showAssist"); cb.checked = false; cb.dispatchEvent(new Event("change", { bubbles: true })); });
   await new Promise((r) => setTimeout(r, 300));
-  const assistHidden = await page.evaluate(() => document.getElementById("histFig").classList.contains("hidden") && document.getElementById("previews").classList.contains("single"));
-  console.log("assist off hides preview+hist:", assistHidden);
+  const assistHidden = await page.evaluate(() => document.getElementById("histFig").classList.contains("hidden") && !document.getElementById("cvView").classList.contains("hidden"));
+  console.log("assist off hides histogram only:", assistHidden);
   await page.evaluate(() => { const cb = document.getElementById("showAssist"); cb.checked = true; cb.dispatchEvent(new Event("change", { bubbles: true })); });
   await new Promise((r) => setTimeout(r, 400));
 
