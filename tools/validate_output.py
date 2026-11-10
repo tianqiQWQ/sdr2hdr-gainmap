@@ -355,6 +355,7 @@ def main():
     ap.add_argument("--output-mode", choices=["single", "compare"], default="single", help="single HDR or SDR/HDR comparison collage")
     ap.add_argument("--compare-order", choices=["sdr-top", "hdr-top"], default="sdr-top")
     ap.add_argument("--compare-gap", type=int, default=8)
+    ap.add_argument("--compare-layout", choices=["vertical", "horizontal"], default="vertical")
     ap.add_argument("--compare-size", choices=["social", "original"], default="social")
     ap.add_argument("--highlight-compress", type=float, default=80.0, help="highlight rolloff percent")
     ap.add_argument("--dump")
@@ -582,45 +583,69 @@ def main():
         w0, h0 = orig_img.size
         gap = max(0, int(args.compare_gap))
         max_long = 8192 if args.compare_size == "original" else 4096
-        base_h = 2 * h0 + gap
-        scale = min(1.0, max_long / max(w0, base_h))
-        out_w = max(1, round(w0 * scale))
+        horizontal = args.compare_layout == "horizontal"
+        if horizontal:
+            base_w = 2 * w0 + gap
+            base_h = h0
+        else:
+            base_w = w0
+            base_h = 2 * h0 + gap
+        scale = min(1.0, max_long / max(base_w, base_h))
+        half_w = max(1, round(w0 * scale))
         half_h = max(1, round(h0 * scale))
         gap2 = max(0, round(gap * scale))
-        out_h = half_h * 2 + gap2
+        if horizontal:
+            out_w = half_w * 2 + gap2
+            out_h = half_h
+        else:
+            out_w = half_w
+            out_h = half_h * 2 + gap2
         ck.check(base.size == (out_w, out_h), "base dimensions match collage layout",
                  f"{base.size} vs {(out_w, out_h)}")
         ck.check(gm.size == (out_w, out_h), "gain map dimensions match collage layout",
                  f"{gm.size} vs {(out_w, out_h)}")
         a = np.asarray(base.convert("RGB"), np.float32)
         g = np.asarray(gm.convert("L"), np.float32) / 255.0
-        top_g = g[:half_h, :]
-        bottom_g = g[half_h + gap2:, :]
-        ck.check(float(top_g.max()) <= 0.02, "top half gain map is zero",
-                 f"max {float(top_g.max()):.4f}")
-        ck.check(float(bottom_g.max()) > 0.3 and float(bottom_g.mean()) > 0.02,
-                 "bottom half carries real gain",
-                 f"max {float(bottom_g.max()):.3f}, mean {float(bottom_g.mean()):.3f}")
-        ref = np.asarray(orig_img.resize((out_w, half_h), Image.BILINEAR), np.float32)
-        top_b = a[:half_h, :, :]
-        bot_b = a[half_h + gap2:, :, :]
-        d_top = float(np.median(np.abs(top_b - ref)))
-        d_bot = float(np.median(np.abs(bot_b - ref)))
-        ck.check(d_top < 10, "top half matches SDR base", f"median diff {d_top:.2f}")
-        ck.check(d_bot < 10, "bottom half matches SDR base", f"median diff {d_bot:.2f}")
+        if horizontal:
+            first_g = g[:, :half_w]
+            second_g = g[:, half_w + gap2:]
+            first_b = a[:, :half_w, :]
+            second_b = a[:, half_w + gap2:, :]
+        else:
+            first_g = g[:half_h, :]
+            second_g = g[half_h + gap2:, :]
+            first_b = a[:half_h, :, :]
+            second_b = a[half_h + gap2:, :, :]
+        sdr_first = args.compare_order != "hdr-top"
+        sdr_g, hdr_g = (first_g, second_g) if sdr_first else (second_g, first_g)
+        sdr_b, hdr_b = (first_b, second_b) if sdr_first else (second_b, first_b)
+        ck.check(float(sdr_g.max()) <= 0.02, "SDR half gain map is zero",
+                 f"max {float(sdr_g.max()):.4f}")
+        ck.check(float(hdr_g.max()) > 0.3 and float(hdr_g.mean()) > 0.02,
+                 "HDR half carries real gain",
+                 f"max {float(hdr_g.max()):.3f}, mean {float(hdr_g.mean()):.3f}")
+        ref = np.asarray(orig_img.resize((half_w, half_h), Image.BILINEAR), np.float32)
+        d_sdr = float(np.median(np.abs(sdr_b - ref)))
+        d_hdr = float(np.median(np.abs(hdr_b - ref)))
+        ck.check(d_sdr < 10, "SDR half matches SDR base", f"median diff {d_sdr:.2f}")
+        ck.check(d_hdr < 10, "HDR half matches SDR base", f"median diff {d_hdr:.2f}")
         if gap2 > 0:
-            gap_base = a[half_h:half_h + gap2, :, :]
+            if horizontal:
+                gap_base = a[:, half_w:half_w + gap2, :]
+                gap_gain = g[:, half_w:half_w + gap2]
+            else:
+                gap_base = a[half_h:half_h + gap2, :, :]
+                gap_gain = g[half_h:half_h + gap2, :]
             ck.check(float(gap_base.mean()) < 60, "collage gap is dark",
                      f"mean {float(gap_base.mean()):.1f}")
-            ck.check(float(g[half_h:half_h + gap2, :].max()) <= 0.02,
-                     "collage gap gain is zero")
+            ck.check(float(gap_gain.max()) <= 0.02, "collage gap gain is zero")
         base_c = base.convert("RGB")
         gm_c = gm.convert("L")
         hdr, boost = reconstruct_hdr(base_c, gm_c, meta)
         bmean = boost.mean(axis=2)
         bmax = 2 ** expected_M
-        print(f"    collage {out_w}x{out_h}, scale {scale:.2f}, gap {gap2}px, "
-              f"top gain max {float(top_g.max()):.3f}, bottom gain mean {float(bottom_g.mean()):.3f}")
+        print(f"    collage {out_w}x{out_h} ({args.compare_layout}), scale {scale:.2f}, gap {gap2}px, "
+              f"SDR gain max {float(sdr_g.max()):.3f}, HDR gain mean {float(hdr_g.mean()):.3f}")
     else:
         # ---------------- [4] pixels / HDR reconstruction ----------------
         print("\n[4] pixels / HDR reconstruction")

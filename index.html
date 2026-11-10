@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SDR → HDR 转换器（本地网页版）v0.23</title>
+<title>SDR → HDR 转换器（本地网页版）v0.24</title>
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --fg: #e8eaf0;
@@ -479,8 +479,8 @@
 <body>
 <header>
   <div class="header-text">
-    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.23 · 本地处理，不上传</span></h1>
-    <div class="ver-note">v0.23 更新：新增手动肤色保护取色器（默认关闭，最多 5 个取样、颜色容差、保护范围蒙版）</div>
+    <h1>SDR → HDR 转换器 <span style="color:var(--muted);font-weight:400;font-size:13px">v0.24 · 本地处理，不上传</span></h1>
+    <div class="ver-note">v0.24 更新：导出 SDR/HDR 对比拼图新增「左右布局」选项（上下布局仍为默认）</div>
     <p>把普通 SDR JPG / PNG 转成带增益图（gain map）的 HDR JPG：<b>HDR 屏上</b>高光更亮、画面更通透；
        <b>普通屏 / 旧软件</b>显示和原图完全一样。原图字节（含 EXIF/ICC）原样保留，全程在浏览器本地处理。</p>
   </div>
@@ -643,9 +643,13 @@
         </select></div>
         <div class="hint" style="margin-left:96px;color:#7f8a9b;font-size:11.5px">单张输出 _HDR.jpg；对比拼图输出 _SDR-HDR对比.jpg</div>
         <div id="compareFields" class="wm-group hidden">
+          <div class="field"><label for="compareLayout">拼图布局</label><select id="compareLayout">
+            <option value="vertical" selected>上下布局</option>
+            <option value="horizontal">左右布局</option>
+          </select></div>
           <div class="field"><label for="compareOrder">拼图顺序</label><select id="compareOrder">
-            <option value="sdr-top" selected>SDR 在上 / HDR 在下</option>
-            <option value="hdr-top">HDR 在上 / SDR 在下</option>
+            <option value="sdr-top" selected>SDR 在前 / HDR 在后</option>
+            <option value="hdr-top">HDR 在前 / SDR 在后</option>
           </select></div>
           <div class="field range"><label for="compareGap">中缝</label><input type="range" id="compareGap" min="0" max="16" step="1" value="8"><span class="val" id="compareGapVal">8px</span></div>
           <div class="field"><label>标签</label><label class="chk"><input type="checkbox" id="compareLabels" checked> 显示 SDR / HDR 文字</label></div>
@@ -659,7 +663,7 @@
             <option value="social" selected>社交尺寸（长边 ≤4096）</option>
             <option value="original">原分辨率（长边 ≤8192）</option>
           </select></div>
-          <div class="field"><span></span><span class="hint">两半都是 SDR 底图，只有 HDR 那一半带真实增益图：SDR 屏两半一致，HDR 屏另一半会提亮。水印/标签/中缝不参与提亮。</span></div>
+          <div class="field"><span></span><span class="hint">上下 / 左右两种拼图布局；两半都是 SDR 底图，只有 HDR 那一半带真实增益图：SDR 屏两半一致，HDR 屏另一半会提亮。水印/标签/中缝不参与提亮。</span></div>
         </div>
 
         <h3 style="margin-top:16px">JPEG 质量</h3>
@@ -1783,6 +1787,7 @@ const els = {
   wmMargin: document.getElementById("wmMargin"),
   wmMarginVal: document.getElementById("wmMarginVal"),
   compareFields: document.getElementById("compareFields"),
+  compareLayout: document.getElementById("compareLayout"),
   compareOrder: document.getElementById("compareOrder"),
   compareGap: document.getElementById("compareGap"),
   compareGapVal: document.getElementById("compareGapVal"),
@@ -2961,6 +2966,7 @@ function readExportOpts() {
   };
   const outputMode = els.outputMode ? els.outputMode.value : "single";
   const compare = {
+    layout: els.compareLayout ? els.compareLayout.value : "vertical",
     order: els.compareOrder ? els.compareOrder.value : "sdr-top",
     gap: clamp(num(els.compareGap, 8), 0, 16),
     labels: els.compareLabels ? els.compareLabels.checked : true,
@@ -3087,44 +3093,52 @@ async function canvasToJpegBytes(canvas, quality) {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-/** SDR/HDR 对比拼图的输出尺寸（社交尺寸长边≤4096；原分辨率模式长边≤8192 防内存爆） */
+/** SDR/HDR 对比拼图的输出尺寸（上下或左右；社交尺寸长边≤4096，原分辨率≤8192） */
 function compareOutputDims(w, h, opts) {
   const cmp = (opts && opts.compare) || {};
+  const layout = cmp.layout === "horizontal" ? "horizontal" : "vertical";
   const gap = Math.max(0, Math.round(cmp.gap == null ? 8 : cmp.gap));
-  const baseW = w, baseH = 2 * h + gap;
+  const baseW = layout === "vertical" ? w : 2 * w + gap;
+  const baseH = layout === "vertical" ? 2 * h + gap : h;
   const maxLong = (cmp.size || "social") === "original" ? 8192 : 4096;
   const scale = Math.min(1, maxLong / Math.max(baseW, baseH));
-  const outW = Math.max(1, Math.round(baseW * scale));
+  const halfW = Math.max(1, Math.round(w * scale));
   const halfH = Math.max(1, Math.round(h * scale));
   const gap2 = Math.max(0, Math.round(gap * scale));
-  return { scale, W: outW, halfH, gap: gap2, H: halfH * 2 + gap2, maxLong };
+  const W = layout === "vertical" ? halfW : halfW * 2 + gap2;
+  const H = layout === "vertical" ? halfH * 2 + gap2 : halfH;
+  return { scale, W, H, halfW, halfH, gap, gap2, layout, maxLong };
 }
 
-/** 在对比拼图上绘制 SDR / HDR 标签（位置/大小可调；maskOnly 时白色用于清零蒙版） */
-function drawCompareLabels(ctx, W, halfH, gap, order, maskOnly, compare) {
-  const sdrTop = (order || "sdr-top") === "sdr-top";
-  const labels = sdrTop ? ["SDR", "HDR"] : ["HDR", "SDR"];
+/** 在对比拼图上绘制 SDR / HDR 标签（位置/大小可调；兼容上下/左右；maskOnly 时白色用于清零蒙版） */
+function drawCompareLabels(ctx, dims, order, maskOnly, compare) {
+  const firstSdr = (order || "sdr-top") === "sdr-top";
+  const labels = firstSdr ? ["SDR", "HDR"] : ["HDR", "SDR"];
   const cmp = compare || {};
   const pos = cmp.labelPos || "bl";
   const sizePct = clamp((cmp.labelSizePct == null ? 3 : cmp.labelSizePct) / 100, 0.01, 0.15);
-  const size = Math.max(10, Math.round(Math.min(W, halfH) * sizePct));
-  const margin = Math.max(8, Math.round(Math.min(W, halfH) * 0.024));
+  const size = Math.max(10, Math.round(Math.min(dims.halfW, dims.halfH) * sizePct));
+  const margin = Math.max(8, Math.round(Math.min(dims.halfW, dims.halfH) * 0.024));
   const vert = pos[0], horiz = pos[1];
-  const tops = [0, halfH + gap];
+  const horizontal = dims.layout === "horizontal";
+  const boxes = horizontal
+    ? [{ x: 0, y: 0, w: dims.halfW, h: dims.halfH }, { x: dims.halfW + dims.gap2, y: 0, w: dims.halfW, h: dims.halfH }]
+    : [{ x: 0, y: 0, w: dims.W, h: dims.halfH }, { x: 0, y: dims.halfH + dims.gap2, w: dims.W, h: dims.halfH }];
   ctx.save();
   ctx.font = `700 ${size}px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif`;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   for (let i = 0; i < labels.length; i++) {
+    const b = boxes[i];
     const tw = ctx.measureText(labels[i]).width;
     let x;
-    if (horiz === "l") x = margin;
-    else if (horiz === "r") x = W - margin - tw;
-    else x = (W - tw) / 2;
+    if (horiz === "l") x = b.x + margin;
+    else if (horiz === "r") x = b.x + b.w - margin - tw;
+    else x = b.x + (b.w - tw) / 2;
     let y;
-    if (vert === "t") y = tops[i] + margin + size * 0.85;
-    else if (vert === "b") y = tops[i] + halfH - margin;
-    else y = tops[i] + halfH / 2 + size * 0.3;
+    if (vert === "t") y = b.y + margin + size * 0.85;
+    else if (vert === "b") y = b.y + b.h - margin;
+    else y = b.y + b.h / 2 + size * 0.3;
     ctx.fillStyle = maskOnly ? "#ffffff" : "rgba(255,255,255,0.92)";
     if (!maskOnly) {
       ctx.shadowColor = "rgba(0,0,0,0.55)";
@@ -3136,31 +3150,44 @@ function drawCompareLabels(ctx, W, halfH, gap, order, maskOnly, compare) {
   ctx.restore();
 }
 
-/** 构建 SDR/HDR 上下对比拼图（真 HDR：下半带真实增益图，SDR 屏两半一致） */
+/** 对比拼图两半的位置（兼容上下 / 左右布局；order=sdr-top 表示 SDR 在前） */
+function compareSlots(dims, order) {
+  const firstSdr = (order || "sdr-top") === "sdr-top";
+  const slots = dims.layout === "horizontal"
+    ? [
+        { x: 0, y: 0, w: dims.halfW, h: dims.halfH },
+        { x: dims.halfW + dims.gap2, y: 0, w: dims.halfW, h: dims.halfH },
+      ]
+    : [
+        { x: 0, y: 0, w: dims.W, h: dims.halfH },
+        { x: 0, y: dims.halfH + dims.gap2, w: dims.W, h: dims.halfH },
+      ];
+  return { sdr: firstSdr ? slots[0] : slots[1], hdr: firstSdr ? slots[1] : slots[0] };
+}
+
+/** 构建 SDR/HDR 对比拼图（上下或左右；HDR 半区带真实增益图，SDR 屏两半一致） */
 async function buildCompareOutputBytes(bitmap, originalBytes, params, orientation, inputIsPng, profile, opts) {
   const w = bitmap.width, h = bitmap.height;
   const dims = compareOutputDims(w, h, opts);
   const order = (opts.compare && opts.compare.order) || "sdr-top";
-  const sdrTop = order === "sdr-top";
+  const slots = compareSlots(dims, order);
   const gainScale = params.gainScale || 1;
   const gw = Math.max(1, Math.round(w * gainScale));
   const gh = Math.max(1, Math.round(h * gainScale));
 
-  // 1) SDR 底图（曝光/PNG 模式可能重编码；拼图时暂时不加水印，水印加在拼图成品上）
+  // 1) SDR 底图（拼图时暂时不加水印，水印加在拼图成品上）
   const baseCanvas = await buildBaseCanvas(bitmap, params, { watermark: null, logoBitmap: null });
 
-  // 2) 拼图底图（两半都是 SDR 画面 + 中缝 + 标签 + 水印）
+  // 2) 拼图底图：两半都是 SDR 画面 + 中缝 + 标签 + 水印
   const canvas = document.createElement("canvas");
   canvas.width = dims.W; canvas.height = dims.H;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.fillStyle = "#101318";
   ctx.fillRect(0, 0, dims.W, dims.H);
-  const topY = sdrTop ? 0 : dims.halfH + dims.gap;
-  const botY = sdrTop ? dims.halfH + dims.gap : 0;
-  ctx.drawImage(baseCanvas, 0, 0, w, h, 0, topY, dims.W, dims.halfH);
-  ctx.drawImage(baseCanvas, 0, 0, w, h, 0, botY, dims.W, dims.halfH);
+  ctx.drawImage(baseCanvas, 0, 0, w, h, slots.sdr.x, slots.sdr.y, slots.sdr.w, slots.sdr.h);
+  ctx.drawImage(baseCanvas, 0, 0, w, h, slots.hdr.x, slots.hdr.y, slots.hdr.w, slots.hdr.h);
   if (!opts.compare || opts.compare.labels !== false) {
-    drawCompareLabels(ctx, dims.W, dims.halfH, dims.gap, order, false, opts.compare);
+    drawCompareLabels(ctx, dims, order, false, opts.compare);
   }
   const wm = opts.watermark || { type: "none" };
   const logo = opts.logoBitmap || state.wmLogoBitmap;
@@ -3172,7 +3199,7 @@ async function buildCompareOutputBytes(bitmap, originalBytes, params, orientatio
     baseBytes = insertSegmentsAfterApps(baseBytes, extractAppSegments(originalBytes));
   }
 
-  // 3) 增益图：上半清零，下半使用正常增益分布
+  // 3) 增益图：SDR 半区清零，只有 HDR 半区带正常增益分布
   const gainJpeg = await buildGainMapJpeg(bitmap, gw, gh, profile, {});
   const gW = Math.max(1, Math.round(dims.W * gainScale));
   const gH = Math.max(1, Math.round(dims.H * gainScale));
@@ -3182,22 +3209,24 @@ async function buildCompareOutputBytes(bitmap, originalBytes, params, orientatio
   gctx.fillStyle = "#000";
   gctx.fillRect(0, 0, gW, gH);
   const gainBmp = await createImageBitmap(new Blob([gainJpeg], { type: "image/jpeg" }));
-  const gHalfH = Math.max(1, Math.round(dims.halfH * gainScale));
-  const gGap = Math.max(0, Math.round(dims.gap * gainScale));
-  const hdrTopY = sdrTop ? gHalfH + gGap : 0;
-  gctx.drawImage(gainBmp, 0, 0, gw, gh, 0, hdrTopY, gW, gHalfH);
+  const hdrX = Math.max(0, Math.round(slots.hdr.x * gainScale));
+  const hdrY = Math.max(0, Math.round(slots.hdr.y * gainScale));
+  const hdrW = Math.max(1, Math.round(slots.hdr.w * gainScale));
+  const hdrH = Math.max(1, Math.round(slots.hdr.h * gainScale));
+  gctx.drawImage(gainBmp, 0, 0, gw, gh, hdrX, hdrY, hdrW, hdrH);
   gainBmp.close && gainBmp.close();
 
   // 4) 蒙版：中缝、标签、水印区域增益清零
   const mask = document.createElement("canvas");
   mask.width = dims.W; mask.height = dims.H;
   const mctx = mask.getContext("2d", { willReadFrequently: true });
-  if (dims.gap > 0) {
+  if (dims.gap2 > 0) {
     mctx.fillStyle = "#ffffff";
-    mctx.fillRect(0, dims.halfH, dims.W, dims.gap);
+    if (dims.layout === "horizontal") mctx.fillRect(dims.halfW, 0, dims.gap2, dims.H);
+    else mctx.fillRect(0, dims.halfH, dims.W, dims.gap2);
   }
   if (!opts.compare || opts.compare.labels !== false) {
-    drawCompareLabels(mctx, dims.W, dims.halfH, dims.gap, order, true, opts.compare);
+    drawCompareLabels(mctx, dims, order, true, opts.compare);
   }
   if (watermarkEffective(wm, logo)) drawWatermark(mctx, dims.W, dims.H, wm, logo, true);
 
@@ -3309,7 +3338,16 @@ function downloadFileName(opts) {
   return prefix + "_HDR.jpg";
 }
 
+function updateCompareOrderLabels() {
+  if (!els.compareOrder || !els.compareLayout) return;
+  const horizontal = els.compareLayout.value === "horizontal";
+  const o = els.compareOrder.options;
+  if (o[0]) o[0].textContent = horizontal ? "SDR 在左 / HDR 在右" : "SDR 在上 / HDR 在下";
+  if (o[1]) o[1].textContent = horizontal ? "HDR 在左 / SDR 在右" : "HDR 在上 / SDR 在下";
+}
+
 function updateExportLabels() {
+  updateCompareOrderLabels();
   const opts = readExportOpts();
   if (els.qualityVal) els.qualityVal.textContent = String(Math.round(opts.quality));
   if (els.wmFontSizeVal) els.wmFontSizeVal.textContent = (opts.watermark.fontPct || 3) + "% 短边";
@@ -3328,6 +3366,7 @@ function updateWatermarkUi() {
   els.wmCommonFields.classList.toggle("hidden", type === "none");
   const mode = els.outputMode ? els.outputMode.value : "single";
   els.compareFields.classList.toggle("hidden", mode !== "compare");
+  updateCompareOrderLabels();
   updateExportLabels();
 }
 
@@ -3367,11 +3406,15 @@ function updateExportInfo() {
     `底图：<b>${baseMode}</b>`,
     `JPEG 质量：<b>${needRe ? Math.round(opts.quality) : "原图"}</b>`,
     `水印：<b>${wmText}</b>`,
-    `增益图：<b>${isCompare ? "下半区" : gw + "×" + gh}</b>${isCompare ? "" : "（" + ((params.gainScale || 1) * 100).toFixed(0) + "%）"}`,
+    `增益图：<b>${isCompare ? "拼图 HDR 半区" : gw + "×" + gh}</b>${isCompare ? "" : "（" + ((params.gainScale || 1) * 100).toFixed(0) + "%）"}`,
   ];
   if (isCompare) {
     const posNames = { tl: "左上", tc: "上中", tr: "右上", ml: "左中", mc: "居中", mr: "右中", bl: "左下", bc: "下中", br: "右下" };
-    lines.push(`拼图：<b>${opts.compare.order === "hdr-top" ? "HDR 上 / SDR 下" : "SDR 上 / HDR 下"}</b> · 中缝 ${Math.round(opts.compare.gap)}px · ` +
+    const horizontal = opts.compare.layout === "horizontal";
+    const orderText = horizontal
+      ? (opts.compare.order === "hdr-top" ? "HDR 左 / SDR 右" : "SDR 左 / HDR 右")
+      : (opts.compare.order === "hdr-top" ? "HDR 上 / SDR 下" : "SDR 上 / HDR 下");
+    lines.push(`拼图布局：<b>${horizontal ? "左右" : "上下"}</b> · 顺序：<b>${orderText}</b> · 中缝 ${Math.round(opts.compare.gap)}px · ` +
       (opts.compare.labels ? `标签 ${posNames[opts.compare.labelPos] || "左下"} · ${opts.compare.labelSizePct}%` : "无标签"));
   }
   if (params.exposureEv > 0.001) lines.push(`整体曝光：<b>+${params.exposureEv.toFixed(1)} EV（仅 HDR）</b>` + (params.exposureOnly ? " · <b>仅整体曝光</b>" : ""));
@@ -4261,7 +4304,7 @@ function bindUi() {
   [els.exportQuality, els.wmFontSize, els.wmLogoScale, els.wmMargin, els.wmOpacity]
     .forEach((el) => { if (el) el.addEventListener("input", onExportOptsChanged); });
   [els.wmType, els.wmPosition].forEach((el) => { if (el) el.addEventListener("change", onExportOptsChanged); });
-  [els.outputMode, els.compareOrder, els.compareSize, els.compareLabelPos].forEach((el) => { if (el) el.addEventListener("change", onExportOptsChanged); });
+  [els.outputMode, els.compareLayout, els.compareOrder, els.compareSize, els.compareLabelPos].forEach((el) => { if (el) el.addEventListener("change", onExportOptsChanged); });
   if (els.compareGap) els.compareGap.addEventListener("input", onExportOptsChanged);
   if (els.compareLabelSize) els.compareLabelSize.addEventListener("input", onExportOptsChanged);
   if (els.compareLabels) els.compareLabels.addEventListener("change", onExportOptsChanged);
@@ -4307,7 +4350,7 @@ function bindUi() {
  * 测试钩子（headless Chrome / 自动化验证）
  * ============================================================ */
 window.__hdrApp = {
-  version: "0.23",
+  version: "0.24",
   defaultParams: DEFAULT_PARAMS,
   async encodeFromArrayBuffer(buffer, paramsOrStrength, gainScaleOpt, exportOptsOpt) {
     let params;

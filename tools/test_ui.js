@@ -361,6 +361,20 @@ const SHOTS = path.join(ROOT, "tests");
     errors.push("compare label position/size controls wrong");
   }
   await shot("ui_v14_compare_labels.png");
+
+  // 左右布局
+  await page.select("#compareLayout", "horizontal");
+  await new Promise((r) => setTimeout(r, 400));
+  const horizUi = await page.evaluate(() => ({
+    layout: document.getElementById("compareLayout").value,
+    orderText: document.getElementById("compareOrder").options[0].textContent,
+    order2Text: document.getElementById("compareOrder").options[1].textContent,
+    info: document.getElementById("exportInfo").innerText.replace(/\s+/g, " "),
+  }));
+  console.log("compare horizontal UI:", JSON.stringify(horizUi));
+  if (horizUi.layout !== "horizontal" || !horizUi.orderText.includes("左") || !horizUi.info.includes("拼图布局：左右")) {
+    errors.push("compare horizontal layout UI wrong");
+  }
   await page.click("#exportStart");
   await page.waitForFunction('document.getElementById("exportStatus").textContent.indexOf("完成") >= 0', { timeout: 120000 });
   await new Promise((r) => setTimeout(r, 1500));
@@ -371,7 +385,7 @@ const SHOTS = path.join(ROOT, "tests");
     const im = new Image(); im.onload = () => res([im.naturalWidth, im.naturalHeight]); im.onerror = rej; im.src = url;
   }), "file://" + path.join(downloadDir, cmpFile));
   console.log("compare decoded dims:", cmpFile, cmpDims);
-  if (!(cmpDims[1] > 3000 && cmpDims[0] > 1000)) errors.push("compare image dims wrong");
+  if (!(cmpDims[0] > cmpDims[1] * 1.5)) errors.push("horizontal compare dims wrong");
   await shot("ui_v13_compare_done.png");
 
   // 对比图同样含增益图，重新上传应被拒绝

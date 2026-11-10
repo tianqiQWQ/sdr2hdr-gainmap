@@ -60,8 +60,8 @@ python3 tools/validate_output.py \
 # SDR/HDR 对比拼图（社交尺寸，SDR 在上、8px 中缝）
 python3 tools/validate_output.py \
   --output tests/collage.jpg --original tests/input_synthetic_12mp.jpg \
-  --strength 50 --output-mode compare --compare-order sdr-top \
-  --compare-gap 8 --compare-size social
+  --strength 50 --output-mode compare --compare-layout horizontal \
+  --compare-order sdr-top --compare-gap 8 --compare-size social
 
 # 参考文件解码（检查解码公式：可选，需要外部 HDR 参考文件）
 python3 tools/validate_output.py --decode path/to/reference-ultrahdr.jpg
